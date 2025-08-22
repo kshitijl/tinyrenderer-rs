@@ -12,6 +12,8 @@ fn main() -> std::io::Result<()> {
             let (r, g, b) = if on {
                 if (x / 32 == 0) && (y / 32 == 0) {
                     (255, 0, 0)
+                } else if y / 32 == 0 {
+                    (0, 0, 255)
                 } else {
                     (255, 255, 255)
                 }
