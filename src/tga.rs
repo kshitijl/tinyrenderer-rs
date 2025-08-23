@@ -95,10 +95,13 @@ pub struct TgaFile {
 }
 
 impl TgaFile {
-    pub fn from_rgb(width: u16, height: u16, rgb: &[u8]) -> Self {
-        assert_eq!(rgb.len(), (width as usize) * (height as usize) * 3);
+    pub fn from_image(image: crate::image::Image) -> Self {
+        let width = image.width();
+        let height = image.height();
+        let buf = image.buf();
+        assert_eq!(buf.len(), (width as usize) * (height as usize) * 3);
 
-        let header = TgaHeader::new(width, height);
+        let header = TgaHeader::new(width as _, height as _);
 
         let src_stride = (width as usize) * 3;
         let dst_bpp = header.bytes_per_pixel();
@@ -108,7 +111,7 @@ impl TgaFile {
             let src_y = y;
             let dst_y = y;
 
-            let src_row = &rgb[src_y * src_stride..src_y * src_stride + src_stride];
+            let src_row = &buf[src_y * src_stride..src_y * src_stride + src_stride];
             let dst_row = &mut pixel_data
                 [dst_y * (width as usize) * dst_bpp..(dst_y + 1) * (width as usize) * dst_bpp];
 

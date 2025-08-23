@@ -1,34 +1,35 @@
+mod image;
 mod tga;
 
-use tga::TgaFile;
-fn main() -> std::io::Result<()> {
-    let w = 256u16;
-    let h = 256u16;
-    let mut rgb = vec![0u8; w as usize * h as usize * 3];
+use crate::image::{Image, color};
 
-    for y in 0..h as usize {
-        for x in 0..w as usize {
+fn main() -> std::io::Result<()> {
+    let mut image = Image::new(256u16, 256u16);
+    let white = color(255, 255, 255);
+    let red = color(255, 0, 0);
+    let blue = color(0, 0, 255);
+    let black = color(0, 0, 0);
+
+    for y in 0..image.height() as usize {
+        for x in 0..image.width() as usize {
             let on = ((x / 32) ^ (y / 32)) & 1 == 0;
-            let (r, g, b) = if on {
+            let color = if on {
                 if (x / 32 == 0) && (y / 32 == 0) {
-                    (255, 0, 0)
+                    red
                 } else if y / 32 == 0 {
-                    (0, 0, 255)
+                    blue
                 } else {
-                    (255, 255, 255)
+                    white
                 }
             } else {
-                (0, 0, 0)
+                black
             };
-            let i = (y * w as usize + x) * 3;
-            rgb[i + 0] = r;
-            rgb[i + 1] = g;
-            rgb[i + 2] = b;
+            image.set(x, y, color);
         }
     }
 
-    let tga = TgaFile::from_rgb(w, h, &rgb);
-    tga.save_to_path("output/checkers.tga")?;
+    let tga = tga::TgaFile::from_image(image);
+    tga.save_to_path("output.tga")?;
 
     Ok(())
 }
