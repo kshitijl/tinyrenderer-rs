@@ -21,15 +21,16 @@ fn line(ax: usize, ay: usize, bx: usize, by: usize, image: &mut Image, color: Co
     let mut x = ax;
     let mut y = ay;
     let mut ierror = 0; // defined as error * 2 * (bx - ax)
+    let dy = if by > ay { 1 } else { -1 };
     while x <= bx {
         let (xx, yy) = if !steep { (x, y) } else { (y, x) };
         image.set(xx as usize, yy as usize, color);
 
         ierror += (by - ay) * 2;
-        if ierror > (bx - ax) {
-            y += if by > ay { 1 } else { -1 };
-            ierror -= 2 * (bx - ax);
-        }
+
+        let should_incr = (ierror > (bx - ax)) as i32;
+        y += dy * should_incr;
+        ierror -= 2 * (bx - ax) * should_incr;
         x += 1;
     }
 }
