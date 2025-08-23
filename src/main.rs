@@ -64,51 +64,39 @@ fn fill_triangle(
     assert!(ay <= by);
     assert!(by <= cy);
 
-    // We work our way up from A, which is (ax,ay).
-
     let mut y = ay;
 
-    // First let's go up to the height of B.
-    while y < by {
-        assert!(by != ay);
-        assert!(cy != ay);
-        // Get the point on AB with this y.
-        // When y = ay, x should be ax.
-        // When y = by, x should be bx.
-        let x_ab = ax + ((y - ay) * (bx - ax)) / (by - ay);
-
-        let x_ac = ax + ((y - ay) * (cx - ax)) / (cy - ay);
-        // Get the point on AC with this y.
-
-        let lower_bound = i32::min(x_ab, x_ac);
-        let upper_bound = i32::max(x_ab, x_ac);
-
-        for x in lower_bound..=upper_bound {
-            image.set(x as usize, y as usize, YELLOW);
-        }
-
-        y += 1;
-    }
-
-    assert!(y == by);
-
-    // Then we'll go up to the height of C.
+    // TODO carefully think through degenerate cases: ay = by, by = cy, and when
+    // ay = by = cy. Note that ay <= by <= cy so those are the three cases.
     while y <= cy {
-        let x_bc = bx as f32 + ((y - by) as f32) / ((cy - by) as f32) * ((cx - bx) as f32);
+        let x_ab_or_bc = if y < by {
+            assert!(by != ay);
+            let x_ab = ax + ((y - ay) * (bx - ax)) / (by - ay);
+            x_ab
+        } else if y < cy {
+            assert!(cy != by);
+            let x_bc = bx + ((y - by) * (cx - bx)) / (cy - by);
+            x_bc
+        } else {
+            cx
+        };
 
-        // Get the point on AC with this y.
-        let x_ac = ax as f32 + ((y - ay) as f32) / ((cy - ay) as f32) * ((cx - ax) as f32);
+        let x_ac = if ay != cy {
+            assert!(cy != ay);
+            ax + ((y - ay) * (cx - ax)) / (cy - ay)
+        } else {
+            ax
+        };
 
-        let lower_bound = f32::min(x_bc, x_ac).round() as i32;
-        let upper_bound = f32::max(x_bc, x_ac).round() as i32;
+        let lower_bound = i32::min(x_ab_or_bc, x_ac);
+        let upper_bound = i32::max(x_ab_or_bc, x_ac);
 
         for x in lower_bound..=upper_bound {
-            image.set(x as usize, y as usize, BLUE);
+            image.set(x as usize, y as usize, color);
         }
+
         y += 1;
     }
-
-    assert!(y == cy + 1);
 }
 
 #[inline]
@@ -149,9 +137,9 @@ fn fill_triangle_pixeltest(
     }
 }
 fn triangle(ax: i32, ay: i32, bx: i32, by: i32, cx: i32, cy: i32, image: &mut Image, color: Color) {
-    linei32(ax, ay, bx, by, image, color);
-    linei32(bx, by, cx, cy, image, color);
-    linei32(cx, cy, ax, ay, image, color);
+    // linei32(ax, ay, bx, by, image, color);
+    // linei32(bx, by, cx, cy, image, color);
+    // linei32(cx, cy, ax, ay, image, color);
 
     let mut arr = [(ax, ay), (bx, by), (cx, cy)];
     arr.sort_unstable_by_key(|p| p.1);
