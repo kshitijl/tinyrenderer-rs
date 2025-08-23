@@ -26,3 +26,6 @@ Here is the journey of this renderer so far:
 
 #### This is correct
 ![](./renders/11-diablo.png)
+
+### You can do rotations in 3D with very little code
+![](./renders/12-diablo-rotating.webp)
