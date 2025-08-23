@@ -28,10 +28,12 @@ impl Image {
         Self { width, height, buf }
     }
 
+    #[inline]
     pub fn width(&self) -> usize {
         self.width as _
     }
 
+    #[inline]
     pub fn height(&self) -> usize {
         self.height as _
     }
@@ -40,6 +42,7 @@ impl Image {
         &self.buf
     }
 
+    #[inline]
     pub fn set(&mut self, x: usize, y: usize, color: Color) {
         let idx = (y * self.width as usize + x) * 3;
         self.buf[idx + 0] = color.r;

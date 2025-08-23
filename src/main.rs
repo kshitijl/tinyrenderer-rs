@@ -23,6 +23,8 @@ fn linei32(ax: i32, ay: i32, bx: i32, by: i32, image: &mut Image, color: Color) 
     };
 
     assert!(ax <= bx);
+    assert!((ax - bx).abs() >= (ay - by).abs());
+
     let mut x = ax;
     let mut y = ay;
     let mut ierror = 0; // defined as error * 2 * (bx - ax)
@@ -30,9 +32,12 @@ fn linei32(ax: i32, ay: i32, bx: i32, by: i32, image: &mut Image, color: Color) 
     while x <= bx {
         let (xx, yy) = if !steep { (x, y) } else { (y, x) };
 
-        assert!(xx >= 0);
-        assert!(yy >= 0);
-        image.set(xx as usize, yy as usize, color);
+        // skip points outside the image bounds. we do this discarding here
+        // rather than outside the loop so we draw any visible portions of lines
+        // whose endpoints might lie outside bounds.
+        if xx >= 0 && yy >= 0 && xx < image.width() as i32 && yy < image.height() as i32 {
+            image.set(xx as usize, yy as usize, color);
+        }
 
         ierror += (by - ay).abs() * 2;
         let should_incr = (ierror > (bx - ax)) as i32;
@@ -75,16 +80,16 @@ fn main() -> std::io::Result<()> {
             b.x = b.x * cos_angle + b.z * sin_angle;
             c.x = c.x * cos_angle + c.z * sin_angle;
 
-            let a = (one + a) * s / 2.0001;
-            let b = (one + b) * s / 2.0001;
-            let c = (one + c) * s / 2.0001;
+            let a = (one + a) * s / 2.0;
+            let b = (one + b) * s / 2.0;
+            let c = (one + c) * s / 2.0;
 
             linef32(a.x, a.y, b.x, b.y, &mut image, RED);
             linef32(b.x, b.y, c.x, c.y, &mut image, RED);
             linef32(c.x, c.y, a.x, a.y, &mut image, RED);
         }
         let tga = tga::TgaFile::from_image(image);
-        tga.save_to_path(format!("output-{:02}.tga", idx).as_str())?;
+        tga.save_to_path(format!("raw-output/frame-{:02}.tga", idx).as_str())?;
     }
 
     Ok(())
