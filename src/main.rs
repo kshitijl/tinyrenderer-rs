@@ -131,6 +131,9 @@ fn main() -> std::io::Result<()> {
     triangle(7, 45, 35, 100, 45, 60, &mut image, RED);
     triangle(120, 35, 90, 5, 45, 110, &mut image, WHITE);
     triangle(115, 83, 80, 90, 85, 120, &mut image, GREEN);
+    triangle(115, 83, 80, 83, 85, 120, &mut image, RED);
+    triangle(115, 83, 80, 83, 85, 83, &mut image, RED);
+    triangle(115, 20, 115, 30, 140, 70, &mut image, RED);
 
     let tga = tga::TgaFile::from_image(image);
     let idx = 0;
