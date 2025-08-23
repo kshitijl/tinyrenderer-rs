@@ -20,16 +20,15 @@ fn line(ax: usize, ay: usize, bx: usize, by: usize, image: &mut Image, color: Co
 
     let mut x = ax;
     let mut y = ay;
-    let mut error: f32 = 0.0;
-    let dy = (by - ay) as f32 / (bx - ax) as f32;
+    let mut ierror = 0; // defined as error * 2 * (bx - ax)
     while x <= bx {
         let (xx, yy) = if !steep { (x, y) } else { (y, x) };
         image.set(xx as usize, yy as usize, color);
 
-        error += dy.abs();
-        if error > 0.5 {
+        ierror += (by - ay) * 2;
+        if ierror > (bx - ax) {
             y += if by > ay { 1 } else { -1 };
-            error -= 1.0;
+            ierror -= 2 * (bx - ax);
         }
         x += 1;
     }
