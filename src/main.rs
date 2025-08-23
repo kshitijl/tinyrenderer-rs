@@ -5,8 +5,8 @@ mod wavefront_obj;
 
 use crate::image::*;
 use crate::linalg::*;
+use rand::Rng;
 use std::f32;
-use std::ops::{Mul, Sub};
 
 fn linei32(ax: i32, ay: i32, bx: i32, by: i32, image: &mut Image, color: Color) {
     let steep = (by - ay).abs() > (bx - ax).abs();
@@ -137,33 +137,70 @@ fn fill_triangle_pixeltest(
     }
 }
 fn triangle(ax: i32, ay: i32, bx: i32, by: i32, cx: i32, cy: i32, image: &mut Image, color: Color) {
-    // linei32(ax, ay, bx, by, image, color);
-    // linei32(bx, by, cx, cy, image, color);
-    // linei32(cx, cy, ax, ay, image, color);
-
     let mut arr = [(ax, ay), (bx, by), (cx, cy)];
     arr.sort_unstable_by_key(|p| p.1);
     fill_triangle(
         arr[0].0, arr[0].1, arr[1].0, arr[1].1, arr[2].0, arr[2].1, image, color,
     );
-    // fill_triangle_pixeltest(ax, ay, bx, by, cx, cy, image, color);
 }
 
 fn main() -> std::io::Result<()> {
-    let s = 200;
-    let mut image = Image::new(s, s);
-    let s = image.width() as f32;
+    let mut rng = rand::rng();
+    let s = 1600;
 
-    triangle(7, 45, 35, 100, 45, 60, &mut image, RED);
-    triangle(120, 35, 90, 5, 45, 110, &mut image, WHITE);
-    triangle(115, 83, 80, 90, 85, 120, &mut image, GREEN);
-    triangle(115, 83, 80, 83, 85, 120, &mut image, RED);
-    triangle(115, 83, 80, 83, 85, 83, &mut image, RED);
-    triangle(115, 20, 115, 30, 140, 70, &mut image, RED);
+    let model = wavefront_obj::Model::from_file("assets/diablo3_pose.obj").unwrap();
 
-    let tga = tga::TgaFile::from_image(image);
-    let idx = 0;
-    tga.save_to_path(format!("raw-output/frame-{:02}.tga", idx).as_str())?;
+    let one = vec3(1.0, 1.0, 1.0);
+
+    // for (idx, angle) in (0..360).step_by(20).enumerate() {
+    //     let mut image = Image::new(s, s);
+    //     let s = image.width() as f32;
+
+    //     let angle = angle as f32 * 2.0 * f32::consts::PI / 360.0;
+    //     let cos_angle = angle.cos();
+    //     let sin_angle = angle.sin();
+
+    //     for face in model.faces.iter() {
+    //         let mut a = model.vertices[face[0]];
+    //         let mut b = model.vertices[face[1]];
+    //         let mut c = model.vertices[face[2]];
+
+    //         a.x = a.x * cos_angle + a.z * sin_angle;
+    //         b.x = b.x * cos_angle + b.z * sin_angle;
+    //         c.x = c.x * cos_angle + c.z * sin_angle;
+
+    //         let a = (one + a) * s / 2.0001;
+    //         let b = (one + b) * s / 2.0001;
+    //         let c = (one + c) * s / 2.0001;
+
+    //         let triangle_color = color(rng.random(), rng.random(), rng.random());
+
+    //         triangle(
+    //             a.x as i32,
+    //             a.y as i32,
+    //             b.x as i32,
+    //             b.y as i32,
+    //             c.x as i32,
+    //             c.y as i32,
+    //             &mut image,
+    //             triangle_color,
+    //         );
+    //     }
+    //     let tga = tga::TgaFile::from_image(image);
+    //     tga.save_to_path(format!("raw-output/frame-{:02}.tga", idx).as_str())?;
+    // }
+    // for face in model.faces.iter() {
+    //     let a = model.vertices[face[0]];
+    //     let b = model.vertices[face[1]];
+    //     let c = model.vertices[face[2]];
+
+    //     let a = (one + a) * s / 2.0001;
+    //     let b = (one + b) * s / 2.0001;
+    //     let c = (one + c) * s / 2.0001;
+    // }
+    // let tga = tga::TgaFile::from_image(image);
+    // let idx = 0;
+    // tga.save_to_path(format!("raw-output/frame-{:02}.tga", idx).as_str())?;
 
     Ok(())
 }
