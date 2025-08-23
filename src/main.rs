@@ -19,13 +19,18 @@ fn line(ax: usize, ay: usize, bx: usize, by: usize, image: &mut Image, color: Co
     };
 
     let mut x = ax;
-    let mut y = ay as f32;
+    let mut y = ay;
+    let mut error: f32 = 0.0;
     let dy = (by - ay) as f32 / (bx - ax) as f32;
     while x <= bx {
-        let (xx, yy) = if !steep { (x, y as i32) } else { (y as i32, x) };
+        let (xx, yy) = if !steep { (x, y) } else { (y, x) };
         image.set(xx as usize, yy as usize, color);
 
-        y += dy;
+        error += dy.abs();
+        if error > 0.5 {
+            y += if by > ay { 1 } else { -1 };
+            error -= 1.0;
+        }
         x += 1;
     }
 }
