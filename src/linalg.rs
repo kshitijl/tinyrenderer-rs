@@ -1,4 +1,42 @@
-use std::ops::{Add, Div, Mul};
+use std::ops::{Add, Div, Mul, Sub};
+
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub struct Vec2<T> {
+    pub x: T,
+    pub y: T,
+}
+
+pub fn vec2<T>(x: T, y: T) -> Vec2<T> {
+    Vec2 { x, y }
+}
+
+impl<T: Add<Output = T>> Add for Vec2<T> {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self {
+            x: self.x + rhs.x,
+            y: self.y + rhs.y,
+        }
+    }
+}
+
+impl<T: Sub<Output = T>> Sub for Vec2<T> {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self {
+            x: self.x - rhs.x,
+            y: self.y - rhs.y,
+        }
+    }
+}
+
+impl<T: Mul<Output = T> + Sub<Output = T>> Vec2<T> {
+    pub fn cross(self, rhs: Self) -> T {
+        self.x * rhs.y - self.y * rhs.x
+    }
+}
 
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub struct Vec3 {

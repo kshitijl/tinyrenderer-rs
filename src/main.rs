@@ -3,10 +3,10 @@ mod linalg;
 mod tga;
 mod wavefront_obj;
 
-use std::f32;
-
 use crate::image::*;
 use crate::linalg::*;
+use std::f32;
+use std::ops::{Mul, Sub};
 
 fn linei32(ax: i32, ay: i32, bx: i32, by: i32, image: &mut Image, color: Color) {
     let steep = (by - ay).abs() > (bx - ax).abs();
@@ -75,13 +75,13 @@ fn fill_triangle(
         // Get the point on AB with this y.
         // When y = ay, x should be ax.
         // When y = by, x should be bx.
-        let x_ab = ax as f32 + ((y - ay) as f32) / ((by - ay) as f32) * ((bx - ax) as f32);
+        let x_ab = ax + ((y - ay) * (bx - ax)) / (by - ay);
 
+        let x_ac = ax + ((y - ay) * (cx - ax)) / (cy - ay);
         // Get the point on AC with this y.
-        let x_ac = ax as f32 + ((y - ay) as f32) / ((cy - ay) as f32) * ((cx - ax) as f32);
 
-        let lower_bound = f32::min(x_ab, x_ac).round() as i32;
-        let upper_bound = f32::max(x_ab, x_ac).round() as i32;
+        let lower_bound = i32::min(x_ab, x_ac);
+        let upper_bound = i32::max(x_ab, x_ac);
 
         for x in lower_bound..=upper_bound {
             image.set(x as usize, y as usize, YELLOW);
@@ -111,6 +111,43 @@ fn fill_triangle(
     assert!(y == cy + 1);
 }
 
+#[inline]
+fn same_side(p1: Vec2<i32>, p2: Vec2<i32>, a: Vec2<i32>, b: Vec2<i32>) -> bool {
+    let cp1 = (b - a).cross(p1 - a);
+    let cp2 = (b - a).cross(p2 - a);
+    cp1 * cp2 >= 0
+}
+
+fn point_in_triangle(p: Vec2<i32>, a: Vec2<i32>, b: Vec2<i32>, c: Vec2<i32>) -> bool {
+    same_side(p, a, b, c) && same_side(p, b, a, c) && same_side(p, c, a, b)
+}
+
+fn fill_triangle_pixeltest(
+    ax: i32,
+    ay: i32,
+    bx: i32,
+    by: i32,
+    cx: i32,
+    cy: i32,
+    image: &mut Image,
+    color: Color,
+) {
+    let smallest_x = i32::min(ax, i32::min(bx, cx));
+    let smallest_y = i32::min(ay, i32::min(by, cy));
+    let biggest_x = i32::max(ax, i32::max(bx, cx));
+    let biggest_y = i32::max(ay, i32::max(by, cy));
+
+    let a = vec2(ax, ay);
+    let b = vec2(bx, by);
+    let c = vec2(cx, cy);
+    for x in smallest_x..=biggest_x {
+        for y in smallest_y..=biggest_y {
+            if point_in_triangle(vec2(x, y), a, b, c) {
+                image.set(x as usize, y as usize, color);
+            }
+        }
+    }
+}
 fn triangle(ax: i32, ay: i32, bx: i32, by: i32, cx: i32, cy: i32, image: &mut Image, color: Color) {
     linei32(ax, ay, bx, by, image, color);
     linei32(bx, by, cx, cy, image, color);
@@ -121,6 +158,7 @@ fn triangle(ax: i32, ay: i32, bx: i32, by: i32, cx: i32, cy: i32, image: &mut Im
     fill_triangle(
         arr[0].0, arr[0].1, arr[1].0, arr[1].1, arr[2].0, arr[2].1, image, color,
     );
+    // fill_triangle_pixeltest(ax, ay, bx, by, cx, cy, image, color);
 }
 
 fn main() -> std::io::Result<()> {
