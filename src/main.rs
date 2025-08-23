@@ -51,46 +51,90 @@ fn linef32(ax: f32, ay: f32, bx: f32, by: f32, image: &mut Image, color: Color) 
     linei32(ax as i32, ay as i32, bx as i32, by as i32, image, color)
 }
 
-fn main() -> std::io::Result<()> {
-    let s = 800u16;
+fn fill_triangle(
+    ax: i32,
+    ay: i32,
+    bx: i32,
+    by: i32,
+    cx: i32,
+    cy: i32,
+    image: &mut Image,
+    color: Color,
+) {
+    assert!(ay <= by);
+    assert!(by <= cy);
 
-    let model = wavefront_obj::Model::from_file("assets/diablo3_pose.obj").unwrap();
-    println!(
-        "Parsed model with {} vertices and {} triangles",
-        model.vertices.len(),
-        model.faces.len()
-    );
+    // We work our way up from A, which is (ax,ay).
 
-    let one = vec3(1.0, 1.0, 1.0);
+    let mut y = ay;
 
-    for (idx, angle) in (0..360).step_by(20).enumerate() {
-        let mut image = Image::new(s, s);
-        let s = image.width() as f32;
+    // First let's go up to the height of B.
+    while y < by {
+        assert!(by != ay);
+        assert!(cy != ay);
+        // Get the point on AB with this y.
+        // When y = ay, x should be ax.
+        // When y = by, x should be bx.
+        let x_ab = ax as f32 + ((y - ay) as f32) / ((by - ay) as f32) * ((bx - ax) as f32);
 
-        let angle = angle as f32 * 2.0 * f32::consts::PI / 360.0;
-        let cos_angle = angle.cos();
-        let sin_angle = angle.sin();
+        // Get the point on AC with this y.
+        let x_ac = ax as f32 + ((y - ay) as f32) / ((cy - ay) as f32) * ((cx - ax) as f32);
 
-        for face in model.faces.iter() {
-            let mut a = model.vertices[face[0]];
-            let mut b = model.vertices[face[1]];
-            let mut c = model.vertices[face[2]];
+        let lower_bound = f32::min(x_ab, x_ac).round() as i32;
+        let upper_bound = f32::max(x_ab, x_ac).round() as i32;
 
-            a.x = a.x * cos_angle + a.z * sin_angle;
-            b.x = b.x * cos_angle + b.z * sin_angle;
-            c.x = c.x * cos_angle + c.z * sin_angle;
-
-            let a = (one + a) * s / 2.0;
-            let b = (one + b) * s / 2.0;
-            let c = (one + c) * s / 2.0;
-
-            linef32(a.x, a.y, b.x, b.y, &mut image, RED);
-            linef32(b.x, b.y, c.x, c.y, &mut image, RED);
-            linef32(c.x, c.y, a.x, a.y, &mut image, RED);
+        for x in lower_bound..=upper_bound {
+            image.set(x as usize, y as usize, YELLOW);
         }
-        let tga = tga::TgaFile::from_image(image);
-        tga.save_to_path(format!("raw-output/frame-{:02}.tga", idx).as_str())?;
+
+        y += 1;
     }
+
+    assert!(y == by);
+
+    // Then we'll go up to the height of C.
+    while y <= cy {
+        let x_bc = bx as f32 + ((y - by) as f32) / ((cy - by) as f32) * ((cx - bx) as f32);
+
+        // Get the point on AC with this y.
+        let x_ac = ax as f32 + ((y - ay) as f32) / ((cy - ay) as f32) * ((cx - ax) as f32);
+
+        let lower_bound = f32::min(x_bc, x_ac).round() as i32;
+        let upper_bound = f32::max(x_bc, x_ac).round() as i32;
+
+        for x in lower_bound..=upper_bound {
+            image.set(x as usize, y as usize, BLUE);
+        }
+        y += 1;
+    }
+
+    assert!(y == cy + 1);
+}
+
+fn triangle(ax: i32, ay: i32, bx: i32, by: i32, cx: i32, cy: i32, image: &mut Image, color: Color) {
+    linei32(ax, ay, bx, by, image, color);
+    linei32(bx, by, cx, cy, image, color);
+    linei32(cx, cy, ax, ay, image, color);
+
+    let mut arr = [(ax, ay), (bx, by), (cx, cy)];
+    arr.sort_unstable_by_key(|p| p.1);
+    fill_triangle(
+        arr[0].0, arr[0].1, arr[1].0, arr[1].1, arr[2].0, arr[2].1, image, color,
+    );
+}
+
+fn main() -> std::io::Result<()> {
+    let s = 200;
+    let mut image = Image::new(s, s);
+    let s = image.width() as f32;
+
+    triangle(7, 45, 35, 100, 45, 60, &mut image, RED);
+    triangle(120, 35, 90, 5, 45, 110, &mut image, WHITE);
+    triangle(115, 83, 80, 90, 85, 120, &mut image, GREEN);
+
+    let tga = tga::TgaFile::from_image(image);
+    let idx = 0;
+    tga.save_to_path(format!("raw-output/frame-{:02}.tga", idx).as_str())?;
 
     Ok(())
 }
