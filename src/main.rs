@@ -40,8 +40,12 @@ fn linei32(ax: i32, ay: i32, bx: i32, by: i32, image: &mut Image, color: Color) 
     }
 }
 
+fn linef32(ax: f32, ay: f32, bx: f32, by: f32, image: &mut Image, color: Color) {
+    linei32(ax as i32, ay as i32, bx as i32, by as i32, image, color)
+}
+
 fn main() -> std::io::Result<()> {
-    let s = 2048u16;
+    let s = 800u16;
     let mut image = Image::new(s, s);
 
     let model = wavefront_obj::Model::from_file("assets/diablo3_pose.obj").unwrap();
@@ -58,15 +62,9 @@ fn main() -> std::io::Result<()> {
         let b = (one + model.vertices[face[1]]) * s / 2.0001;
         let c = (one + model.vertices[face[2]]) * s / 2.0001;
 
-        line(
-            a.x as i32, a.y as i32, b.x as i32, b.y as i32, &mut image, RED,
-        );
-        line(
-            b.x as i32, b.y as i32, c.x as i32, c.y as i32, &mut image, RED,
-        );
-        line(
-            c.x as i32, c.y as i32, a.x as i32, a.y as i32, &mut image, RED,
-        );
+        linef32(a.x, a.y, b.x, b.y, &mut image, RED);
+        linef32(b.x, b.y, c.x, c.y, &mut image, RED);
+        linef32(c.x, c.y, a.x, a.y, &mut image, RED);
     }
 
     for vertex in model.vertices.iter() {
