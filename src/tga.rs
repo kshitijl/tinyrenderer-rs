@@ -109,7 +109,7 @@ impl TgaFile {
 
         for y in 0..(height as usize) {
             let src_y = y;
-            let dst_y = y;
+            let dst_y = height - 1 - y;
 
             let src_row = &buf[src_y * src_stride..src_y * src_stride + src_stride];
             let dst_row = &mut pixel_data

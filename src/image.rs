@@ -5,9 +5,14 @@ pub struct Color {
     pub b: u8,
 }
 
-pub fn color(r: u8, g: u8, b: u8) -> Color {
+pub const fn color(r: u8, g: u8, b: u8) -> Color {
     Color { r, g, b }
 }
+
+pub const WHITE: Color = color(255, 255, 255);
+pub const RED: Color = color(255, 0, 0);
+pub const BLUE: Color = color(0, 0, 255);
+pub const BLACK: Color = color(0, 0, 0);
 
 pub struct Image {
     buf: Vec<u8>,
