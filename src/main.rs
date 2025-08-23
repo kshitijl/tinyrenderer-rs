@@ -4,25 +4,27 @@ mod tga;
 use crate::image::*;
 
 fn line(ax: usize, ay: usize, bx: usize, by: usize, image: &mut Image, color: Color) {
+    let (ax, ay, bx, by) = (ax as i32, ay as i32, bx as i32, by as i32);
     let (ax, bx, ay, by) = if ax <= bx {
         (ax, bx, ay, by)
     } else {
         (bx, ax, by, ay)
     };
 
-    let steep = (by as i32 - ay as i32).abs() > (bx as i32 - ax as i32).abs();
+    let steep = (by - ay).abs() > (bx - ax).abs();
     let (ax, bx, ay, by) = if !steep {
         (ax, bx, ay, by)
     } else {
         (ay, by, ax, bx)
     };
+
     let mut x = ax;
     while x <= bx {
-        let t = (x as i32 - ax as i32) as f32 / (bx as i32 - ax as i32) as f32;
-        let y = (ay as f32 + (by as i32 - ay as i32) as f32 * t).round() as usize;
+        let t = (x - ax) as f32 / (bx - ax) as f32;
+        let y = (ay as f32 + (by - ay) as f32 * t).round() as i32;
 
         let (xx, yy) = if !steep { (x, y) } else { (y, x) };
-        image.set(xx, yy, color);
+        image.set(xx as usize, yy as usize, color);
 
         x += 1;
     }
