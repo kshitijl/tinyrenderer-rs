@@ -5,3 +5,4 @@ edition = "2024"
 
 [dependencies]
 binrw = "0.15.0"
+nom = "8.0.0"
