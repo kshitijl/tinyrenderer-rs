@@ -136,7 +136,16 @@ fn fill_triangle_pixeltest(
         }
     }
 }
-fn triangle(ax: i32, ay: i32, bx: i32, by: i32, cx: i32, cy: i32, image: &mut Image, color: Color) {
+fn trianglei32(
+    ax: i32,
+    ay: i32,
+    bx: i32,
+    by: i32,
+    cx: i32,
+    cy: i32,
+    image: &mut Image,
+    color: Color,
+) {
     let mut arr = [(ax, ay), (bx, by), (cx, cy)];
     arr.sort_unstable_by_key(|p| p.1);
     fill_triangle(
@@ -144,14 +153,20 @@ fn triangle(ax: i32, ay: i32, bx: i32, by: i32, cx: i32, cy: i32, image: &mut Im
     );
 }
 
+fn trianglev2i(a: Vec2<i32>, b: Vec2<i32>, c: Vec2<i32>, image: &mut Image, color: Color) {
+    trianglei32(a.x, a.y, b.x, b.y, c.x, c.y, image, color)
+}
+
 fn main() -> std::io::Result<()> {
     let animate = false;
     let mut rng = rand::rng();
     let s = 1600;
 
-    let model = wavefront_obj::Model::from_file("assets/diablo3_pose.obj").unwrap();
+    let model = wavefront_obj::Model::from_file("assets/head.obj").unwrap();
 
     let one = vec3(1.0, 1.0, 1.0);
+
+    let light_dir = vec3(0.0, 0.0, -1.0);
 
     let final_angle = if animate { 360 } else { 1 };
     for (idx, angle) in (0..final_angle).step_by(20).enumerate() {
@@ -163,32 +178,42 @@ fn main() -> std::io::Result<()> {
         let sin_angle = angle.sin();
 
         for face in model.faces.iter() {
-            let mut a = model.vertices[face[0]];
-            let mut b = model.vertices[face[1]];
-            let mut c = model.vertices[face[2]];
+            let mut screen_coords: [Vec2<i32>; 3] = [vec2(0, 0); 3];
+            let mut world_coords: [Vec3; 3] = [vec3(0.0, 0.0, 0.0); 3];
 
-            if animate {
-                a.x = a.x * cos_angle + a.z * sin_angle;
-                b.x = b.x * cos_angle + b.z * sin_angle;
-                c.x = c.x * cos_angle + c.z * sin_angle;
+            for j in 0..3 {
+                let v = model.vertices[face[j]];
+                screen_coords[j] = vec2(
+                    ((v.x + 1.) * s / 2.0001) as i32,
+                    ((v.y + 1.) * s / 2.0001) as i32,
+                );
+                world_coords[j] = v;
             }
 
-            let a = (one + a) * s / 2.0001;
-            let b = (one + b) * s / 2.0001;
-            let c = (one + c) * s / 2.0001;
+            let normal = ((world_coords[2] - world_coords[0])
+                .cross(world_coords[1] - world_coords[0]))
+            .normalized();
 
-            let triangle_color = color(rng.random(), rng.random(), rng.random());
+            let intensity = normal.dot(light_dir);
 
-            triangle(
-                a.x as i32,
-                a.y as i32,
-                b.x as i32,
-                b.y as i32,
-                c.x as i32,
-                c.y as i32,
-                &mut image,
-                triangle_color,
-            );
+            // if animate {
+            //     a.x = a.x * cos_angle + a.z * sin_angle;
+            //     b.x = b.x * cos_angle + b.z * sin_angle;
+            //     c.x = c.x * cos_angle + c.z * sin_angle;
+            // }
+
+            if intensity < 0.0 {
+                let gray = (intensity.abs() * 255.0) as u8;
+                let triangle_color = color(gray, gray, gray);
+
+                trianglev2i(
+                    screen_coords[0],
+                    screen_coords[1],
+                    screen_coords[2],
+                    &mut image,
+                    triangle_color,
+                );
+            }
         }
         let tga = tga::TgaFile::from_image(image);
         tga.save_to_path(format!("raw-output/frame-{:02}.tga", idx).as_str())?;

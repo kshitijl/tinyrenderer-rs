@@ -49,6 +49,28 @@ pub fn vec3(x: f32, y: f32, z: f32) -> Vec3 {
     Vec3 { x, y, z }
 }
 
+impl Vec3 {
+    pub fn cross(self, rhs: Self) -> Self {
+        Self {
+            x: self.y * rhs.z - self.z * rhs.y,
+            y: self.x * rhs.z - self.z * rhs.x,
+            z: self.x * rhs.y - self.y * rhs.x,
+        }
+    }
+
+    pub fn length(self) -> f32 {
+        (self.x * self.x + self.y * self.y + self.z * self.z).sqrt()
+    }
+
+    pub fn normalized(self) -> Self {
+        self / self.length()
+    }
+
+    pub fn dot(self, rhs: Self) -> f32 {
+        self.x * rhs.x + self.y * rhs.y + self.z * rhs.z
+    }
+}
+
 impl Add for Vec3 {
     type Output = Self;
 
@@ -57,6 +79,18 @@ impl Add for Vec3 {
             x: self.x + rhs.x,
             y: self.y + rhs.y,
             z: self.z + rhs.z,
+        }
+    }
+}
+
+impl Sub for Vec3 {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self {
+            x: self.x - rhs.x,
+            y: self.y - rhs.y,
+            z: self.z - rhs.z,
         }
     }
 }
