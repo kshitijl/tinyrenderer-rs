@@ -61,7 +61,7 @@ fn triangle(
 
 fn main() -> std::io::Result<()> {
     let s = 800;
-    let animate = false;
+    let animate = true;
     let model = wavefront_obj::Model::from_file("assets/head.obj").unwrap();
 
     let final_angle = if animate { 360 } else { 1 };
@@ -95,19 +95,17 @@ fn main() -> std::io::Result<()> {
 
             let intensity = normal.dot(light_dir);
 
-            if intensity > 0.0 {
-                let gray = (intensity * 255.0) as u8;
-                let triangle_color = color(gray, gray, gray);
+            let gray = (intensity * 255.0).clamp(0.0, 255.0) as u8;
+            let triangle_color = color(gray, gray, gray);
 
-                triangle(
-                    screen_coords[0],
-                    screen_coords[1],
-                    screen_coords[2],
-                    &mut image,
-                    &mut depths,
-                    triangle_color,
-                );
-            }
+            triangle(
+                screen_coords[0],
+                screen_coords[1],
+                screen_coords[2],
+                &mut image,
+                &mut depths,
+                triangle_color,
+            );
         }
         let tga = tga::TgaFile::from_image(image);
         tga.save_to_path(format!("raw-output/frame-{:02}.tga", idx).as_str())?;
