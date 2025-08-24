@@ -7,9 +7,9 @@ use crate::image::*;
 use crate::linalg::*;
 use std::f32;
 
-fn signed_triangle_area_x2(a: Vec2<i32>, b: Vec2<i32>, c: Vec2<i32>) -> i32 {
+fn signed_triangle_area(a: Vec2<i32>, b: Vec2<i32>, c: Vec2<i32>) -> f32 {
     let answer = (b.y - a.y) * (b.x + a.x) + (c.y - b.y) * (c.x + b.x) + (a.y - c.y) * (a.x + c.x);
-    answer
+    0.5 * answer as f32
 }
 
 fn fill_triangle_pixeltest(
@@ -19,12 +19,7 @@ fn fill_triangle_pixeltest(
     image: &mut Image,
     color: Color,
 ) {
-    let total_area_x2 = signed_triangle_area_x2(a, b, c);
-    if total_area_x2 == 0 {
-        return;
-    }
-
-    let sign = total_area_x2.signum();
+    let total_area = signed_triangle_area(a, b, c);
 
     let smallest_x = i32::min(a.x, i32::min(b.x, c.x));
     let smallest_y = i32::min(a.y, i32::min(b.y, c.y));
@@ -35,18 +30,24 @@ fn fill_triangle_pixeltest(
         for y in smallest_y..=biggest_y {
             let p = vec2(x, y);
 
-            let alpha = signed_triangle_area_x2(p, b, c) * sign;
-            if alpha < 0 {
+            let alpha = signed_triangle_area(p, b, c) / total_area;
+            if alpha < 0.0 {
                 continue;
             }
 
-            let beta = signed_triangle_area_x2(p, c, a) * sign;
-            if beta < 0 {
+            let beta = signed_triangle_area(p, c, a) / total_area;
+            if beta < 0.0 {
                 continue;
             }
 
-            let gamma = signed_triangle_area_x2(p, a, b) * sign;
-            if gamma < 0 {
+            let gamma = signed_triangle_area(p, a, b) / total_area;
+            if gamma < 0.0 {
+                continue;
+            }
+
+            let t = 0.1;
+
+            if f32::min(alpha, f32::min(beta, gamma)) > t {
                 continue;
             }
 
