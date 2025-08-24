@@ -145,6 +145,7 @@ fn triangle(ax: i32, ay: i32, bx: i32, by: i32, cx: i32, cy: i32, image: &mut Im
 }
 
 fn main() -> std::io::Result<()> {
+    let animate = false;
     let mut rng = rand::rng();
     let s = 1600;
 
@@ -152,55 +153,46 @@ fn main() -> std::io::Result<()> {
 
     let one = vec3(1.0, 1.0, 1.0);
 
-    // for (idx, angle) in (0..360).step_by(20).enumerate() {
-    //     let mut image = Image::new(s, s);
-    //     let s = image.width() as f32;
+    let final_angle = if animate { 360 } else { 1 };
+    for (idx, angle) in (0..final_angle).step_by(20).enumerate() {
+        let mut image = Image::new(s, s);
+        let s = image.width() as f32;
 
-    //     let angle = angle as f32 * 2.0 * f32::consts::PI / 360.0;
-    //     let cos_angle = angle.cos();
-    //     let sin_angle = angle.sin();
+        let angle = angle as f32 * 2.0 * f32::consts::PI / 360.0;
+        let cos_angle = angle.cos();
+        let sin_angle = angle.sin();
 
-    //     for face in model.faces.iter() {
-    //         let mut a = model.vertices[face[0]];
-    //         let mut b = model.vertices[face[1]];
-    //         let mut c = model.vertices[face[2]];
+        for face in model.faces.iter() {
+            let mut a = model.vertices[face[0]];
+            let mut b = model.vertices[face[1]];
+            let mut c = model.vertices[face[2]];
 
-    //         a.x = a.x * cos_angle + a.z * sin_angle;
-    //         b.x = b.x * cos_angle + b.z * sin_angle;
-    //         c.x = c.x * cos_angle + c.z * sin_angle;
+            if animate {
+                a.x = a.x * cos_angle + a.z * sin_angle;
+                b.x = b.x * cos_angle + b.z * sin_angle;
+                c.x = c.x * cos_angle + c.z * sin_angle;
+            }
 
-    //         let a = (one + a) * s / 2.0001;
-    //         let b = (one + b) * s / 2.0001;
-    //         let c = (one + c) * s / 2.0001;
+            let a = (one + a) * s / 2.0001;
+            let b = (one + b) * s / 2.0001;
+            let c = (one + c) * s / 2.0001;
 
-    //         let triangle_color = color(rng.random(), rng.random(), rng.random());
+            let triangle_color = color(rng.random(), rng.random(), rng.random());
 
-    //         triangle(
-    //             a.x as i32,
-    //             a.y as i32,
-    //             b.x as i32,
-    //             b.y as i32,
-    //             c.x as i32,
-    //             c.y as i32,
-    //             &mut image,
-    //             triangle_color,
-    //         );
-    //     }
-    //     let tga = tga::TgaFile::from_image(image);
-    //     tga.save_to_path(format!("raw-output/frame-{:02}.tga", idx).as_str())?;
-    // }
-    // for face in model.faces.iter() {
-    //     let a = model.vertices[face[0]];
-    //     let b = model.vertices[face[1]];
-    //     let c = model.vertices[face[2]];
-
-    //     let a = (one + a) * s / 2.0001;
-    //     let b = (one + b) * s / 2.0001;
-    //     let c = (one + c) * s / 2.0001;
-    // }
-    // let tga = tga::TgaFile::from_image(image);
-    // let idx = 0;
-    // tga.save_to_path(format!("raw-output/frame-{:02}.tga", idx).as_str())?;
+            triangle(
+                a.x as i32,
+                a.y as i32,
+                b.x as i32,
+                b.y as i32,
+                c.x as i32,
+                c.y as i32,
+                &mut image,
+                triangle_color,
+            );
+        }
+        let tga = tga::TgaFile::from_image(image);
+        tga.save_to_path(format!("raw-output/frame-{:02}.tga", idx).as_str())?;
+    }
 
     Ok(())
 }
