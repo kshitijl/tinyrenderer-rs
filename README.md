@@ -29,3 +29,16 @@ Here is the journey of this renderer so far:
 
 ### You can do rotations in 3D with very little code
 ![](./renders/12-diablo-rotating.webp)
+
+### Filling in triangles
+![](./renders/14.png)
+![](./renders/15.png)
+![](./renders/17-fill-triangles-one-loop.png)
+![](./renders/18-diablo-with-triangles.png)
+
+### Lighting
+![](./renders/20-head-lit.png)
+![](./renders/21-head-back-faces-lit.png)
+![](./renders/22-head-lit.webp)
+![](./renders/23-diablo-lit.webp)
+
