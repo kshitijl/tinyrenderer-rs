@@ -45,12 +45,6 @@ fn fill_triangle_pixeltest(
                 continue;
             }
 
-            let t = 0.1;
-
-            if f32::min(alpha, f32::min(beta, gamma)) > t {
-                continue;
-            }
-
             image.set(x as usize, y as usize, color);
         }
     }
@@ -67,7 +61,19 @@ fn trianglev2i(a: Vec2<i32>, b: Vec2<i32>, c: Vec2<i32>, image: &mut Image, colo
 fn main() -> std::io::Result<()> {
     let (width, height) = (800, 800);
     let animate = true;
-    let model = wavefront_obj::Model::from_file("assets/head.obj").unwrap();
+    let mut model = wavefront_obj::Model::from_file("assets/diablo.obj").unwrap();
+
+    model.faces.sort_unstable_by(|f1, f2| {
+        let f1_max = f32::max(
+            model.vertices[f1[0]].z,
+            f32::max(model.vertices[f1[1]].z, model.vertices[f1[2]].z),
+        );
+        let f2_max = f32::max(
+            model.vertices[f2[0]].z,
+            f32::max(model.vertices[f2[1]].z, model.vertices[f2[2]].z),
+        );
+        f1_max.partial_cmp(&f2_max).unwrap()
+    });
 
     let final_angle = if animate { 360 } else { 1 };
     for (idx, angle) in (0..final_angle).step_by(20).enumerate() {
