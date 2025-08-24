@@ -5,7 +5,6 @@ mod wavefront_obj;
 
 use crate::image::*;
 use crate::linalg::*;
-use rand::Rng;
 use std::f32;
 
 fn linei32(ax: i32, ay: i32, bx: i32, by: i32, image: &mut Image, color: Color) {
@@ -158,24 +157,20 @@ fn trianglev2i(a: Vec2<i32>, b: Vec2<i32>, c: Vec2<i32>, image: &mut Image, colo
 }
 
 fn main() -> std::io::Result<()> {
-    let animate = false;
-    let mut rng = rand::rng();
-    let s = 1600;
-
-    let model = wavefront_obj::Model::from_file("assets/head.obj").unwrap();
-
-    let one = vec3(1.0, 1.0, 1.0);
-
-    let light_dir = vec3(0.0, 0.0, -1.0);
+    let (width, height) = (800, 800);
+    let animate = true;
+    let model = wavefront_obj::Model::from_file("assets/diablo3_pose.obj").unwrap();
 
     let final_angle = if animate { 360 } else { 1 };
     for (idx, angle) in (0..final_angle).step_by(20).enumerate() {
-        let mut image = Image::new(s, s);
-        let s = image.width() as f32;
+        let mut image = Image::new(width, height);
+        let w = image.width() as f32;
+        let h = image.height() as f32;
 
         let angle = angle as f32 * 2.0 * f32::consts::PI / 360.0;
-        let cos_angle = angle.cos();
+        // let cos_angle = angle.cos();
         let sin_angle = angle.sin();
+        let light_dir = vec3(sin_angle, 0.0, -1.0).normalized();
 
         for face in model.faces.iter() {
             let mut screen_coords: [Vec2<i32>; 3] = [vec2(0, 0); 3];
@@ -184,8 +179,8 @@ fn main() -> std::io::Result<()> {
             for j in 0..3 {
                 let v = model.vertices[face[j]];
                 screen_coords[j] = vec2(
-                    ((v.x + 1.) * s / 2.0001) as i32,
-                    ((v.y + 1.) * s / 2.0001) as i32,
+                    ((v.x + 1.) * w / 2.0001) as i32,
+                    ((v.y + 1.) * h / 2.0001) as i32,
                 );
                 world_coords[j] = v;
             }
@@ -202,8 +197,8 @@ fn main() -> std::io::Result<()> {
             //     c.x = c.x * cos_angle + c.z * sin_angle;
             // }
 
-            if intensity < 0.0 {
-                let gray = (intensity.abs() * 255.0) as u8;
+            if intensity > 0.0 {
+                let gray = (intensity * 255.0) as u8;
                 let triangle_color = color(gray, gray, gray);
 
                 trianglev2i(
