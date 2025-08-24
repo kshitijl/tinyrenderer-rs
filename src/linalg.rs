@@ -39,17 +39,17 @@ impl<T: Mul<Output = T> + Sub<Output = T>> Vec2<T> {
 }
 
 #[derive(Copy, Clone, PartialEq, Debug)]
-pub struct Vec3 {
-    pub x: f32,
-    pub y: f32,
-    pub z: f32,
+pub struct Vec3<T> {
+    pub x: T,
+    pub y: T,
+    pub z: T,
 }
 
-pub fn vec3(x: f32, y: f32, z: f32) -> Vec3 {
+pub fn vec3<T>(x: T, y: T, z: T) -> Vec3<T> {
     Vec3 { x, y, z }
 }
 
-impl Vec3 {
+impl<T: Add<Output = T> + Mul<Output = T> + Sub<Output = T> + Copy> Vec3<T> {
     pub fn cross(self, rhs: Self) -> Self {
         Self {
             x: self.y * rhs.z - self.z * rhs.y,
@@ -58,6 +58,12 @@ impl Vec3 {
         }
     }
 
+    pub fn dot(self, rhs: Self) -> T {
+        self.x * rhs.x + self.y * rhs.y + self.z * rhs.z
+    }
+}
+
+impl Vec3<f32> {
     pub fn length(self) -> f32 {
         (self.x * self.x + self.y * self.y + self.z * self.z).sqrt()
     }
@@ -65,13 +71,9 @@ impl Vec3 {
     pub fn normalized(self) -> Self {
         self / self.length()
     }
-
-    pub fn dot(self, rhs: Self) -> f32 {
-        self.x * rhs.x + self.y * rhs.y + self.z * rhs.z
-    }
 }
 
-impl Add for Vec3 {
+impl<T: Add<Output = T>> Add for Vec3<T> {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
@@ -83,7 +85,7 @@ impl Add for Vec3 {
     }
 }
 
-impl Sub for Vec3 {
+impl<T: Sub<Output = T>> Sub for Vec3<T> {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self::Output {
@@ -95,7 +97,7 @@ impl Sub for Vec3 {
     }
 }
 
-impl Div<f32> for Vec3 {
+impl Div<f32> for Vec3<f32> {
     type Output = Self;
 
     fn div(self, rhs: f32) -> Self::Output {
@@ -107,10 +109,10 @@ impl Div<f32> for Vec3 {
     }
 }
 
-impl Mul<f32> for Vec3 {
+impl<T: Mul<Output = T> + Copy> Mul<T> for Vec3<T> {
     type Output = Self;
 
-    fn mul(self, rhs: f32) -> Self::Output {
+    fn mul(self, rhs: T) -> Self::Output {
         Self {
             x: self.x * rhs,
             y: self.y * rhs,

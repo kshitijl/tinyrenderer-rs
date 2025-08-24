@@ -13,7 +13,7 @@ use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 
 pub struct Model {
-    pub vertices: Vec<Vec3>,
+    pub vertices: Vec<Vec3<f32>>,
     pub faces: Vec<[usize; 3]>,
 }
 
@@ -51,7 +51,7 @@ impl Model {
 
 #[derive(Debug, PartialEq)]
 enum ParsedLine {
-    Vertex(Vec3),
+    Vertex(Vec3<f32>),
     Triangle([usize; 3]),
 }
 
