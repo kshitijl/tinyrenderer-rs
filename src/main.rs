@@ -7,9 +7,9 @@ use crate::image::*;
 use crate::linalg::*;
 use std::f32;
 
-fn signed_triangle_area_x2(a: Vec2<i32>, b: Vec2<i32>, c: Vec2<i32>) -> f32 {
+fn signed_triangle_area_x2(a: Vec2<i32>, b: Vec2<i32>, c: Vec2<i32>) -> i32 {
     let answer = (b.y - a.y) * (b.x + a.x) + (c.y - b.y) * (c.x + b.x) + (a.y - c.y) * (a.x + c.x);
-    answer as f32 * 0.5
+    answer
 }
 
 fn fill_triangle_pixeltest(
@@ -20,9 +20,11 @@ fn fill_triangle_pixeltest(
     color: Color,
 ) {
     let total_area_x2 = signed_triangle_area_x2(a, b, c);
-    // if total_area_x2 < 0.0 {
-    //     return;
-    // }
+    if total_area_x2 == 0 {
+        return;
+    }
+
+    let sign = total_area_x2.signum();
 
     let smallest_x = i32::min(a.x, i32::min(b.x, c.x));
     let smallest_y = i32::min(a.y, i32::min(b.y, c.y));
@@ -33,18 +35,18 @@ fn fill_triangle_pixeltest(
         for y in smallest_y..=biggest_y {
             let p = vec2(x, y);
 
-            let alpha = signed_triangle_area_x2(p, b, c) / total_area_x2;
-            if alpha < 0.0 {
+            let alpha = signed_triangle_area_x2(p, b, c) * sign;
+            if alpha < 0 {
                 continue;
             }
 
-            let beta = signed_triangle_area_x2(p, c, a) / total_area_x2;
-            if beta < 0.0 {
+            let beta = signed_triangle_area_x2(p, c, a) * sign;
+            if beta < 0 {
                 continue;
             }
 
-            let gamma = signed_triangle_area_x2(p, a, b) / total_area_x2;
-            if gamma < 0.0 {
+            let gamma = signed_triangle_area_x2(p, a, b) * sign;
+            if gamma < 0 {
                 continue;
             }
 
@@ -54,10 +56,11 @@ fn fill_triangle_pixeltest(
 }
 
 fn trianglev2i(a: Vec2<i32>, b: Vec2<i32>, c: Vec2<i32>, image: &mut Image, color: Color) {
-    // let mut arr = [a, b, c];
-    // arr.sort_unstable_by_key(|p| p.y);
-    // fill_triangle_pixeltest(arr[0], arr[1], arr[2], image, color);
-    fill_triangle_pixeltest(a, b, c, image, color);
+    // We don't need this sort, but it's nice to keep it around to prevent
+    // depending on the order of vertices in the model file.
+    let mut arr = [a, b, c];
+    arr.sort_unstable_by_key(|p| p.y);
+    fill_triangle_pixeltest(arr[0], arr[1], arr[2], image, color);
 }
 
 fn main() -> std::io::Result<()> {
