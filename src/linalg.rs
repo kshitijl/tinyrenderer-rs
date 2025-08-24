@@ -49,6 +49,15 @@ pub fn vec3<T>(x: T, y: T, z: T) -> Vec3<T> {
     Vec3 { x, y, z }
 }
 
+impl<T> Vec3<T> {
+    pub fn xy(self) -> Vec2<T> {
+        Vec2 {
+            x: self.x,
+            y: self.y,
+        }
+    }
+}
+
 impl<T: Add<Output = T> + Mul<Output = T> + Sub<Output = T> + Copy> Vec3<T> {
     pub fn cross(self, rhs: Self) -> Self {
         Self {

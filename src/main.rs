@@ -12,8 +12,15 @@ fn signed_triangle_area(a: Vec2<i32>, b: Vec2<i32>, c: Vec2<i32>) -> f32 {
     0.5 * answer as f32
 }
 
-fn triangle(a: Vec2<i32>, b: Vec2<i32>, c: Vec2<i32>, image: &mut Image, color: Color) {
-    let total_area = signed_triangle_area(a, b, c);
+fn triangle(
+    a: Vec3<i32>,
+    b: Vec3<i32>,
+    c: Vec3<i32>,
+    image: &mut Image,
+    depths: &mut DepthBuffer,
+    color: Color,
+) {
+    let total_area = signed_triangle_area(a.xy(), b.xy(), c.xy());
 
     let smallest_x = i32::min(a.x, i32::min(b.x, c.x));
     let smallest_y = i32::min(a.y, i32::min(b.y, c.y));
@@ -24,23 +31,29 @@ fn triangle(a: Vec2<i32>, b: Vec2<i32>, c: Vec2<i32>, image: &mut Image, color: 
         for y in smallest_y..=biggest_y {
             let p = vec2(x, y);
 
-            let alpha = signed_triangle_area(p, b, c) / total_area;
+            let alpha = signed_triangle_area(p, b.xy(), c.xy()) / total_area;
             if alpha < 0.0 {
                 continue;
             }
 
-            let beta = signed_triangle_area(p, c, a) / total_area;
+            let beta = signed_triangle_area(p, c.xy(), a.xy()) / total_area;
             if beta < 0.0 {
                 continue;
             }
 
-            let gamma = signed_triangle_area(p, a, b) / total_area;
+            let gamma = signed_triangle_area(p, a.xy(), b.xy()) / total_area;
             if gamma < 0.0 {
                 continue;
             }
 
+            let z = alpha * a.z as f32 + beta * b.z as f32 + gamma * c.z as f32;
+            let z = z as u8;
+
             if x >= 0 && x < image.width() as i32 && y >= 0 && y < image.height() as i32 {
-                image.set(x as usize, y as usize, color);
+                if depths.get(x as usize, y as usize) < z {
+                    depths.set(x as usize, y as usize, z);
+                    image.set(x as usize, y as usize, color);
+                }
             }
         }
     }
@@ -49,11 +62,12 @@ fn triangle(a: Vec2<i32>, b: Vec2<i32>, c: Vec2<i32>, image: &mut Image, color: 
 fn main() -> std::io::Result<()> {
     let s = 800;
     let animate = false;
-    let model = wavefront_obj::Model::from_file("assets/diablo.obj").unwrap();
+    let model = wavefront_obj::Model::from_file("assets/head.obj").unwrap();
 
     let final_angle = if animate { 360 } else { 1 };
     for (idx, angle) in (0..final_angle).step_by(20).enumerate() {
         let mut image = Image::new(s, s);
+        let mut depths = DepthBuffer::new(s, s);
         let s = s as f32;
 
         let angle = angle as f32 * 2.0 * f32::consts::PI / 360.0;
@@ -62,13 +76,16 @@ fn main() -> std::io::Result<()> {
         let light_dir = vec3(sin_angle, 0.0, -1.0).normalized();
 
         for face in model.faces.iter() {
-            let mut screen_coords: [Vec2<i32>; 3] = [vec2(0, 0); 3];
+            let mut screen_coords: [Vec3<i32>; 3] = [vec3(0, 0, 0); 3];
             let mut world_coords: [Vec3<f32>; 3] = [vec3(0.0, 0.0, 0.0); 3];
 
             for j in 0..3 {
                 let v = model.vertices[face[j]];
-                screen_coords[j] =
-                    vec2(((v.x + 1.) * s / 2.0) as i32, ((v.y + 1.) * s / 2.0) as i32);
+                screen_coords[j] = vec3(
+                    ((v.x + 1.) * s / 2.0) as i32,
+                    ((v.y + 1.) * s / 2.0) as i32,
+                    ((v.z + 1.) * 255. / 2.0) as i32,
+                );
                 world_coords[j] = v;
             }
 
@@ -87,12 +104,16 @@ fn main() -> std::io::Result<()> {
                     screen_coords[1],
                     screen_coords[2],
                     &mut image,
+                    &mut depths,
                     triangle_color,
                 );
             }
         }
         let tga = tga::TgaFile::from_image(image);
         tga.save_to_path(format!("raw-output/frame-{:02}.tga", idx).as_str())?;
+
+        let depth_tga = tga::TgaFile::from_image(depths.to_image());
+        depth_tga.save_to_path(format!("raw-output/depth-{:02}.tga", idx).as_str())?;
     }
 
     Ok(())
