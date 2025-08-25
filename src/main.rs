@@ -95,7 +95,6 @@ fn triangle(
             }
 
             let z = alpha * a.z as f32 + beta * b.z as f32 + gamma * c.z as f32;
-            let z = z as u8;
 
             if x >= 0 && x < image.width() as i32 && y >= 0 && y < image.height() as i32 {
                 if depths.get(x as usize, y as usize) > z {
@@ -104,7 +103,6 @@ fn triangle(
                     // println!("{} {} {} {} {} {} {}", a.z, b.z, c.z, alpha, beta, gamma, z);
                     // let z = z / 2.;
                     // let z = z as u8;
-                    let z = 255 - z;
                     // let color = coloru8(z, z, z);
                     image.set(x as usize, y as usize, color);
                 }

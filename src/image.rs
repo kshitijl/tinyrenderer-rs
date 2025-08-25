@@ -54,14 +54,14 @@ impl Image {
     }
 }
 pub struct DepthBuffer {
-    buf: Vec<u8>,
+    buf: Vec<f32>,
     width: u16,
     height: u16,
 }
 
 impl DepthBuffer {
     pub fn new(width: u16, height: u16) -> Self {
-        let buf = vec![255u8; width as usize * height as usize];
+        let buf = vec![f32::MAX; width as usize * height as usize];
         Self { width, height, buf }
     }
 
@@ -71,6 +71,8 @@ impl DepthBuffer {
         for x in 0..self.width as usize {
             for y in 0..self.height as usize {
                 let v = self.buf[y * self.width as usize + x];
+                let v = 255. * (v.tanh() + 1.0) / 2.0;
+                let v = v as u8;
                 let color = coloru8(v, v, v);
                 image.set(x, y, color);
             }
@@ -89,18 +91,18 @@ impl DepthBuffer {
         self.height as _
     }
 
-    pub fn buf(&self) -> &Vec<u8> {
-        &self.buf
-    }
+    // pub fn buf(&self) -> &Vec<f32> {
+    //     &self.buf
+    // }
 
     #[inline]
-    pub fn set(&mut self, x: usize, y: usize, val: u8) {
+    pub fn set(&mut self, x: usize, y: usize, val: f32) {
         let idx = y * self.width as usize + x;
         self.buf[idx] = val;
     }
 
     #[inline]
-    pub fn get(&self, x: usize, y: usize) -> u8 {
+    pub fn get(&self, x: usize, y: usize) -> f32 {
         let idx = y * self.width as usize + x;
         self.buf[idx]
     }
