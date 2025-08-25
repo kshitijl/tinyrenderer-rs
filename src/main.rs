@@ -149,7 +149,7 @@ fn main() -> std::io::Result<()> {
         let mut depths = DepthBuffer::new(args.canvas_size, args.canvas_size);
         let canvas_size = args.canvas_size as f32;
 
-        // let angle = angle + 180;
+        let angle = angle + 180;
         let angle = angle as f32 * 2.0 * f32::consts::PI / 360.0;
         let s = angle.sin();
         let c = angle.cos();
@@ -180,10 +180,10 @@ fn main() -> std::io::Result<()> {
                 v.x = vx;
                 v.z = vz;
 
-                let vy = c * v.y + s * v.z;
-                let vz = -s * v.y + c * v.z;
-                v.y = vy;
-                v.z = vz;
+                // let vy = c * v.y + s * v.z;
+                // let vz = -s * v.y + c * v.z;
+                // v.y = vy;
+                // v.z = vz;
 
                 // v.x += 0.8;
                 // v.y -= 0.6;
