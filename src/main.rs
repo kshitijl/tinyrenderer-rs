@@ -5,7 +5,55 @@ mod wavefront_obj;
 
 use crate::image::*;
 use crate::linalg::*;
+use clap::Parser;
 use std::f32;
+
+fn linei32(ax: i32, ay: i32, bx: i32, by: i32, image: &mut Image, color: Color) {
+    let steep = (by - ay).abs() > (bx - ax).abs();
+    let (ax, bx, ay, by) = if !steep {
+        (ax, bx, ay, by)
+    } else {
+        (ay, by, ax, bx)
+    };
+
+    let (ax, bx, ay, by) = if ax <= bx {
+        (ax, bx, ay, by)
+    } else {
+        (bx, ax, by, ay)
+    };
+
+    assert!(ax <= bx);
+    assert!((ax - bx).abs() >= (ay - by).abs());
+
+    let mut x = ax;
+    let mut y = ay;
+    let mut ierror = 0; // defined as error * 2 * (bx - ax)
+    let dy = if by > ay { 1 } else { -1 };
+    while x <= bx {
+        let (xx, yy) = if !steep { (x, y) } else { (y, x) };
+
+        // skip points outside the image bounds. we do this discarding here
+        // rather than outside the loop so we draw any visible portions of lines
+        // whose endpoints might lie outside bounds.
+        if xx >= 0 && yy >= 0 && xx < image.width() as i32 && yy < image.height() as i32 {
+            image.set(xx as usize, yy as usize, color);
+        }
+
+        ierror += (by - ay).abs() * 2;
+        let should_incr = (ierror > (bx - ax)) as i32;
+        y += dy * should_incr;
+        ierror -= 2 * (bx - ax) * should_incr;
+        x += 1;
+    }
+}
+
+fn linef32(ax: f32, ay: f32, bx: f32, by: f32, image: &mut Image, color: Color) {
+    linei32(ax as i32, ay as i32, bx as i32, by as i32, image, color)
+}
+
+fn linevi32(a: Vec2<i32>, b: Vec2<i32>, image: &mut Image, color: Color) {
+    linei32(a.x, a.y, b.x, b.y, image, color)
+}
 
 fn signed_triangle_area(a: Vec2<i32>, b: Vec2<i32>, c: Vec2<i32>) -> f32 {
     let answer = (b.y - a.y) * (b.x + a.x) + (c.y - b.y) * (c.x + b.x) + (a.y - c.y) * (a.x + c.x);
@@ -50,8 +98,14 @@ fn triangle(
             let z = z as u8;
 
             if x >= 0 && x < image.width() as i32 && y >= 0 && y < image.height() as i32 {
-                if depths.get(x as usize, y as usize) < z {
+                if depths.get(x as usize, y as usize) > z {
                     depths.set(x as usize, y as usize, z);
+                    // let z = alpha * a.z as f32 + beta * b.z as f32 + gamma * c.z as f32;
+                    // println!("{} {} {} {} {} {} {}", a.z, b.z, c.z, alpha, beta, gamma, z);
+                    // let z = z / 2.;
+                    // let z = z as u8;
+                    let z = 255 - z;
+                    // let color = coloru8(z, z, z);
                     image.set(x as usize, y as usize, color);
                 }
             }
@@ -59,32 +113,99 @@ fn triangle(
     }
 }
 
+#[derive(Parser)]
+struct Args {
+    /// Model file
+    model: String,
+
+    /// Produce many frames, not just one
+    #[arg(short, long)]
+    animate: bool,
+
+    /// Output image size in pixels. We only do square images for now.
+    #[arg(short, long, default_value_t = 800)]
+    canvas_size: u16,
+
+    /// Draw red wireframe lines
+    #[arg(short, long)]
+    wireframe: bool,
+}
+
 fn main() -> std::io::Result<()> {
-    let s = 800;
-    let animate = true;
-    let model = wavefront_obj::Model::from_file("assets/head.obj").unwrap();
+    let args = Args::parse();
+    let model = {
+        let mut model = wavefront_obj::Model::from_file(args.model.as_str()).unwrap();
+        model.faces.reverse();
+        model
+    };
 
-    let final_angle = if animate { 360 } else { 1 };
-    for (idx, angle) in (0..final_angle).step_by(20).enumerate() {
-        let mut image = Image::new(s, s);
-        let mut depths = DepthBuffer::new(s, s);
-        let s = s as f32;
+    println!(
+        "Parsed {} vertices and {} faces",
+        model.vertices.len(),
+        model.faces.len()
+    );
 
+    let final_angle = if args.animate { 360 } else { 1 };
+    for (idx, angle) in (0..final_angle).step_by(8).enumerate() {
+        let mut image = Image::new(args.canvas_size, args.canvas_size);
+        let mut depths = DepthBuffer::new(args.canvas_size, args.canvas_size);
+        let canvas_size = args.canvas_size as f32;
+
+        // let angle = angle + 180;
         let angle = angle as f32 * 2.0 * f32::consts::PI / 360.0;
-        // let cos_angle = angle.cos();
-        let sin_angle = angle.sin();
-        let light_dir = vec3(sin_angle, 0.0, -1.0).normalized();
+        let s = angle.sin();
+        let c = angle.cos();
 
-        for face in model.faces.iter() {
+        let light_dir = vec3(-0.2, 0.0, -1.).normalized();
+
+        let colors = [
+            ("white", WHITE),
+            ("red", RED),
+            ("green", GREEN),
+            ("yellow", YELLOW),
+            ("blue", BLUE),
+            ("orange", ORANGE),
+            ("pink", PINK),
+            ("gold", GOLD),
+        ];
+        for (face_idx, face) in model.faces.iter().enumerate() {
             let mut screen_coords: [Vec3<i32>; 3] = [vec3(0, 0, 0); 3];
+            let face_color = colors[face_idx % colors.len()];
+
             let mut world_coords: [Vec3<f32>; 3] = [vec3(0.0, 0.0, 0.0); 3];
 
+            let d = 1.0;
             for j in 0..3 {
-                let v = model.vertices[face[j]];
+                let mut v = model.vertices[face[j]];
+                let vx = c * v.x + s * v.z;
+                let vz = -s * v.x + c * v.z;
+                v.x = vx;
+                v.z = vz;
+
+                let vy = c * v.y + s * v.z;
+                let vz = -s * v.y + c * v.z;
+                v.y = vy;
+                v.z = vz;
+
+                // v.x += 0.8;
+                // v.y -= 0.6;
+
+                v.z += 2.0;
+
+                assert!(v.z > 0.0);
+
+                v.x = v.x * d / v.z;
+                v.y = v.y * d / v.z;
+
+                // println!("{:?} {}", v, face_color.0);
+
+                // v.x = v.x * v.z * d;
+                // v.y = v.y * v.z * d;
+
                 screen_coords[j] = vec3(
-                    ((v.x + 1.) * s / 2.0) as i32,
-                    ((v.y + 1.) * s / 2.0) as i32,
-                    ((v.z + 1.) * 255. / 2.0) as i32,
+                    ((v.x + 1.) * canvas_size / 2.0) as i32,
+                    ((v.y + 1.) * canvas_size / 2.0) as i32,
+                    ((v.z - 1.) * 250. / 2.0) as i32,
                 );
                 world_coords[j] = v;
             }
@@ -93,10 +214,12 @@ fn main() -> std::io::Result<()> {
                 .cross(world_coords[1] - world_coords[0]))
             .normalized();
 
-            let intensity = normal.dot(light_dir);
+            let intensity = normal.dot(light_dir).abs();
+            // let intensity = 0.99f31;
 
             let gray = (intensity * 255.0).clamp(0.0, 255.0) as u8;
-            let triangle_color = color(gray, gray, gray);
+            let triangle_color = coloru8(gray, gray, gray);
+            // let triangle_color = WHITE;
 
             triangle(
                 screen_coords[0],
@@ -106,12 +229,23 @@ fn main() -> std::io::Result<()> {
                 &mut depths,
                 triangle_color,
             );
+
+            if args.wireframe {
+                for i in 0..3 {
+                    linevi32(
+                        screen_coords[i % 3].xy(),
+                        screen_coords[(i + 1) % 3].xy(),
+                        &mut image,
+                        RED,
+                    );
+                }
+            }
         }
         let tga = tga::TgaFile::from_image(image);
         tga.save_to_path(format!("raw-output/frame-{:02}.tga", idx).as_str())?;
 
-        let depth_tga = tga::TgaFile::from_image(depths.to_image());
-        depth_tga.save_to_path(format!("raw-output/depth-{:02}.tga", idx).as_str())?;
+        // let depth_tga = tga::TgaFile::from_image(depths.to_image());
+        // depth_tga.save_to_path(format!("raw-output/depth-{:02}.tga", idx).as_str())?;
     }
 
     Ok(())

@@ -5,16 +5,19 @@ pub struct Color {
     pub b: u8,
 }
 
-pub const fn color(r: u8, g: u8, b: u8) -> Color {
+pub const fn coloru8(r: u8, g: u8, b: u8) -> Color {
     Color { r, g, b }
 }
 
-pub const WHITE: Color = color(255, 255, 255);
-pub const RED: Color = color(255, 0, 0);
-pub const GREEN: Color = color(0, 255, 0);
-pub const YELLOW: Color = color(255, 255, 0);
-pub const BLUE: Color = color(0, 0, 255);
-pub const BLACK: Color = color(0, 0, 0);
+pub const WHITE: Color = coloru8(255, 255, 255);
+pub const RED: Color = coloru8(255, 0, 0);
+pub const GREEN: Color = coloru8(0, 255, 0);
+pub const YELLOW: Color = coloru8(255, 255, 0);
+pub const BLUE: Color = coloru8(0, 0, 255);
+pub const BLACK: Color = coloru8(0, 0, 0);
+pub const ORANGE: Color = coloru8(0xff, 0x45, 0x00);
+pub const PINK: Color = coloru8(0xff, 0xc0, 0xcb);
+pub const GOLD: Color = coloru8(0xff, 0xd7, 0x00);
 
 pub struct Image {
     buf: Vec<u8>,
@@ -58,7 +61,7 @@ pub struct DepthBuffer {
 
 impl DepthBuffer {
     pub fn new(width: u16, height: u16) -> Self {
-        let buf = vec![0u8; width as usize * height as usize];
+        let buf = vec![255u8; width as usize * height as usize];
         Self { width, height, buf }
     }
 
@@ -68,7 +71,7 @@ impl DepthBuffer {
         for x in 0..self.width as usize {
             for y in 0..self.height as usize {
                 let v = self.buf[y * self.width as usize + x];
-                let color = color(v, v, v);
+                let color = coloru8(v, v, v);
                 image.set(x, y, color);
             }
         }
