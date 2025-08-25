@@ -53,6 +53,7 @@ impl Image {
         self.buf[idx + 2] = color.b;
     }
 }
+
 pub struct DepthBuffer {
     buf: Vec<f32>,
     width: u16,
@@ -68,11 +69,27 @@ impl DepthBuffer {
     pub fn to_image(&self) -> Image {
         let mut image = Image::new(self.width, self.height);
 
+        let min_depth = self
+            .buf
+            .iter()
+            .min_by(|x, y| x.partial_cmp(&y).unwrap())
+            .unwrap();
+
+        let max_depth = self
+            .buf
+            .iter()
+            .filter(|&&x| x != f32::MAX)
+            .max_by(|x, y| x.partial_cmp(&y).unwrap())
+            .unwrap();
+
         for x in 0..self.width as usize {
             for y in 0..self.height as usize {
                 let v = self.buf[y * self.width as usize + x];
-                let v = 255. * (v.tanh() + 1.0) / 2.0;
-                let v = v as u8;
+
+                let v = v.clamp(*min_depth, *max_depth);
+                let v = (v - *min_depth) / (max_depth - min_depth);
+                let v = (v * 255.) as u8;
+                let v = 255 - v;
                 let color = coloru8(v, v, v);
                 image.set(x, y, color);
             }

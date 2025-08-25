@@ -127,6 +127,9 @@ struct Args {
     /// Draw red wireframe lines
     #[arg(short, long)]
     wireframe: bool,
+
+    #[arg(long)]
+    write_depth_buffer: bool,
 }
 
 fn main() -> std::io::Result<()> {
@@ -242,8 +245,10 @@ fn main() -> std::io::Result<()> {
         let tga = tga::TgaFile::from_image(image);
         tga.save_to_path(format!("raw-output/frame-{:02}.tga", idx).as_str())?;
 
-        // let depth_tga = tga::TgaFile::from_image(depths.to_image());
-        // depth_tga.save_to_path(format!("raw-output/depth-{:02}.tga", idx).as_str())?;
+        if args.write_depth_buffer {
+            let depth_tga = tga::TgaFile::from_image(depths.to_image());
+            depth_tga.save_to_path(format!("raw-output/depth-{:02}.tga", idx).as_str())?;
+        }
     }
 
     Ok(())
