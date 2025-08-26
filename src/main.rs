@@ -1,3 +1,25 @@
+/*
+clip coordinates: output of vertex shader, after it has transformed with projection matrix, but BEFORE the GPU does the perspective divide and clipping against the view frustum
+
+overall pipeline:
+1. model space. coordinates of vertices as stored in mesh
+2. world space. after applying the model matrix (placing the object in the scene)
+3. view/eye space. after applying the view matrix (putting everything in the camera's coordinate system)
+4. clip space (clip coordinates). after applying the projection matrix (perspective or orthographic). at this stage each vertex is 4d (x,y,z,w).
+5. Normalized Device Coordinates (NDC). Divide by w. (x/w, y/w, z/w). Now everything is in the cube [-1,1]^3.
+6. window/screen coordinates. After the viewport transform, mapping NDC to pixel positions.
+7. NOW rasterizaton happens. Each fragment has interpolated attributes, including depth.
+
+OpenGL convention is a right handed system where the camera looks down the negative Z axis. X axis points right, Y axis points up, Z axis points towards the camera (positive Z values are behind the camera).
+
+In this convention, you typically specify the camera looking towards negative Z, and object you want to see should have negative Z coordinates relative to the camera.
+
+Objects with greater negative Z (i.e., smaller Z) are farther away from the camera.
+
+In NDC, after perspective divide, we want for the near plane that z_ndc = -1, and for the far plane z_ndc = +1.
+
+Also, for the depth test, OpenGL remaps [-1,1] -> [0,1]: z_depth = z_ndc/2 + 1/2. The near plane is z = 0.0, far plane is z = 1.0.
+*/
 mod image;
 mod linalg;
 mod tga;
@@ -55,29 +77,33 @@ fn linevi32(a: Vec2<i32>, b: Vec2<i32>, image: &mut Image, color: Color) {
     linei32(a.x, a.y, b.x, b.y, image, color)
 }
 
-fn signed_triangle_area(a: Vec2<i32>, b: Vec2<i32>, c: Vec2<i32>) -> f32 {
+fn linevf32(a: Vec2<f32>, b: Vec2<f32>, image: &mut Image, color: Color) {
+    linef32(a.x, a.y, b.x, b.y, image, color)
+}
+
+fn signed_triangle_area(a: Vec2<f32>, b: Vec2<f32>, c: Vec2<f32>) -> f32 {
     let answer = (b.y - a.y) * (b.x + a.x) + (c.y - b.y) * (c.x + b.x) + (a.y - c.y) * (a.x + c.x);
     0.5 * answer as f32
 }
 
 fn triangle(
-    a: Vec3<i32>,
-    b: Vec3<i32>,
-    c: Vec3<i32>,
+    a: Vec3<f32>,
+    b: Vec3<f32>,
+    c: Vec3<f32>,
     image: &mut Image,
     depths: &mut DepthBuffer,
     color: Color,
 ) {
     let total_area = signed_triangle_area(a.xy(), b.xy(), c.xy());
 
-    let smallest_x = i32::min(a.x, i32::min(b.x, c.x));
-    let smallest_y = i32::min(a.y, i32::min(b.y, c.y));
-    let biggest_x = i32::max(a.x, i32::max(b.x, c.x));
-    let biggest_y = i32::max(a.y, i32::max(b.y, c.y));
+    let smallest_x = f32::min(a.x, f32::min(b.x, c.x)) as i32;
+    let smallest_y = f32::min(a.y, f32::min(b.y, c.y)) as i32;
+    let biggest_x = f32::max(a.x, f32::max(b.x, c.x)) as i32;
+    let biggest_y = f32::max(a.y, f32::max(b.y, c.y)) as i32;
 
     for x in smallest_x..=biggest_x {
         for y in smallest_y..=biggest_y {
-            let p = vec2(x, y);
+            let p = vec2(x as f32, y as f32);
 
             let alpha = signed_triangle_area(p, b.xy(), c.xy()) / total_area;
             if alpha < 0.0 {
@@ -94,10 +120,11 @@ fn triangle(
                 continue;
             }
 
-            let z = alpha * a.z as f32 + beta * b.z as f32 + gamma * c.z as f32;
+            let one_over_z = alpha / a.z as f32 + beta / b.z as f32 + gamma / c.z as f32;
+            let z = 1. / one_over_z;
 
             if x >= 0 && x < image.width() as i32 && y >= 0 && y < image.height() as i32 {
-                if depths.get(x as usize, y as usize) > z {
+                if z < depths.get(x as usize, y as usize) {
                     depths.set(x as usize, y as usize, z);
                     // let z = alpha * a.z as f32 + beta * b.z as f32 + gamma * c.z as f32;
                     // println!("{} {} {} {} {} {} {}", a.z, b.z, c.z, alpha, beta, gamma, z);
@@ -154,8 +181,12 @@ fn main() -> std::io::Result<()> {
 
         let angle = angle + 180;
         let angle = angle as f32 * 2.0 * f32::consts::PI / 360.0;
-        let s = angle.sin();
-        let c = angle.cos();
+        let m_rot = Mat4::from_rotation_y(angle);
+        let m_trans = Mat4::from_translation(vec3(0.8, -0.6, 2.0));
+        let m_model = &m_trans * &m_rot;
+
+        let m_screen = &Mat4::from_shear(vec3(canvas_size / 2.0, canvas_size / 2.0, 10_000.))
+            * &Mat4::from_translation(vec3(1.0, 1.0, 0.0));
 
         let light_dir = vec3(-0.2, 0.0, -1.).normalized();
 
@@ -170,45 +201,20 @@ fn main() -> std::io::Result<()> {
             ("gold", GOLD),
         ];
         for (face_idx, face) in model.faces.iter().enumerate() {
-            let mut screen_coords: [Vec3<i32>; 3] = [vec3(0, 0, 0); 3];
+            let mut screen_coords: [Vec3<f32>; 3] = [vec3(0., 0., 0.); 3];
             let face_color = colors[face_idx % colors.len()];
 
             let mut world_coords: [Vec3<f32>; 3] = [vec3(0.0, 0.0, 0.0); 3];
 
             let d = 1.0;
             for j in 0..3 {
-                let mut v = model.vertices[face[j]];
-                let vx = c * v.x + s * v.z;
-                let vz = -s * v.x + c * v.z;
-                v.x = vx;
-                v.z = vz;
-
-                // let vy = c * v.y + s * v.z;
-                // let vz = -s * v.y + c * v.z;
-                // v.y = vy;
-                // v.z = vz;
-
-                // v.x += 0.8;
-                // v.y -= 0.6;
-
-                v.z += 2.0;
-
-                assert!(v.z > 0.0);
+                let mut v = &m_model * &model.vertices[face[j]].to4();
 
                 v.x = v.x * d / v.z;
                 v.y = v.y * d / v.z;
 
-                // println!("{:?} {}", v, face_color.0);
-
-                // v.x = v.x * v.z * d;
-                // v.y = v.y * v.z * d;
-
-                screen_coords[j] = vec3(
-                    ((v.x + 1.) * canvas_size / 2.0) as i32,
-                    ((v.y + 1.) * canvas_size / 2.0) as i32,
-                    ((v.z - 1.) * 250. / 2.0) as i32,
-                );
-                world_coords[j] = v;
+                screen_coords[j] = (&m_screen * &v).xyz();
+                world_coords[j] = v.xyz();
             }
 
             let normal = ((world_coords[2] - world_coords[0])
@@ -233,7 +239,7 @@ fn main() -> std::io::Result<()> {
 
             if args.wireframe {
                 for i in 0..3 {
-                    linevi32(
+                    linevf32(
                         screen_coords[i % 3].xy(),
                         screen_coords[(i + 1) % 3].xy(),
                         &mut image,

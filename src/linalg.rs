@@ -56,6 +56,15 @@ impl<T> Vec3<T> {
             y: self.y,
         }
     }
+
+    pub fn to4w(self, w: T) -> Vec4<T> {
+        Vec4 {
+            x: self.x,
+            y: self.y,
+            z: self.z,
+            w,
+        }
+    }
 }
 
 impl<T: Add<Output = T> + Mul<Output = T> + Sub<Output = T> + Copy> Vec3<T> {
@@ -79,6 +88,10 @@ impl Vec3<f32> {
 
     pub fn normalized(self) -> Self {
         self / self.length()
+    }
+
+    pub fn to4(self) -> Vec4<f32> {
+        self.to4w(1.0)
     }
 }
 
@@ -235,8 +248,47 @@ impl<T> Mat4<T> {
     pub fn new(rows: [[T; 4]; 4]) -> Self {
         Self { rows }
     }
+}
 
-    // TODO define from_rotation_{x,y,z} and from_translation(vec3)
+impl Mat4<f32> {
+    pub fn from_rotation_y(angle: f32) -> Self {
+        let c = angle.cos();
+        let s = angle.sin();
+
+        Self::new([
+            [c, 0., s, 0.],
+            [0., 1., 0., 0.],
+            [-s, 0., c, 0.],
+            [0., 0., 0., 1.],
+        ])
+    }
+
+    pub fn from_translation(t: Vec3<f32>) -> Self {
+        Self::new([
+            [1., 0., 0., t.x],
+            [0., 1., 0., t.y],
+            [0., 0., 1., t.z],
+            [0., 0., 0., 1.],
+        ])
+    }
+
+    pub fn from_shear(t: Vec3<f32>) -> Self {
+        Self::new([
+            [t.x, 0., 0., 0.],
+            [0., t.y, 0., 0.],
+            [0., 0., t.z, 0.],
+            [0., 0., 0., 1.],
+        ])
+    }
+
+    pub fn perspective(focal_length: f32) -> Self {
+        Self::new([
+            [1., 0., 0., 0.],
+            [0., 1., 0., 0.],
+            [0., 0., 1., 0.],
+            [0., 0., 0., 0.],
+        ])
+    }
 }
 
 impl<T> Index<usize> for Mat4<T> {
