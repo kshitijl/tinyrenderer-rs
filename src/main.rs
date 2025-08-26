@@ -75,10 +75,6 @@ fn linef32(ax: f32, ay: f32, bx: f32, by: f32, image: &mut Image, color: Color) 
     linei32(ax as i32, ay as i32, bx as i32, by as i32, image, color)
 }
 
-fn linevi32(a: Vec2<i32>, b: Vec2<i32>, image: &mut Image, color: Color) {
-    linei32(a.x, a.y, b.x, b.y, image, color)
-}
-
 fn linevf32(a: Vec2<f32>, b: Vec2<f32>, image: &mut Image, color: Color) {
     linef32(a.x, a.y, b.x, b.y, image, color)
 }
@@ -122,9 +118,6 @@ fn triangle(
                 continue;
             }
 
-            // let one_over_z = alpha / a.z as f32 + beta / b.z as f32 + gamma / c.z as f32;
-            // let z = 1. / one_over_z;
-
             let z = alpha * a.z + beta * b.z + gamma * c.z;
             let z = z / 2. + 0.5;
             assert!(z >= 0.);
@@ -133,11 +126,6 @@ fn triangle(
             if x >= 0 && x < image.width() as i32 && y >= 0 && y < image.height() as i32 {
                 if z < depths.get(x as usize, y as usize) {
                     depths.set(x as usize, y as usize, z);
-                    // let z = alpha * a.z as f32 + beta * b.z as f32 + gamma * c.z as f32;
-                    // println!("{} {} {} {} {} {} {}", a.z, b.z, c.z, alpha, beta, gamma, z);
-                    // let z = z / 2.;
-                    // let z = z as u8;
-                    // let color = coloru8(z, z, z);
                     image.set(x as usize, y as usize, color);
                 }
             }
@@ -203,23 +191,11 @@ fn main() -> std::io::Result<()> {
 
         let light_dir = vec3(-1., 0.0, -1.).normalized();
 
-        let colors = [
-            ("white", WHITE),
-            ("red", RED),
-            ("green", GREEN),
-            ("yellow", YELLOW),
-            ("blue", BLUE),
-            ("orange", ORANGE),
-            ("pink", PINK),
-            ("gold", GOLD),
-        ];
-        for (face_idx, face) in model.faces.iter().enumerate() {
+        for (_face_idx, face) in model.faces.iter().enumerate() {
             let mut screen_coords: [Vec3<f32>; 3] = [vec3(0., 0., 0.); 3];
-            let face_color = colors[face_idx % colors.len()];
 
             let mut world_coords: [Vec3<f32>; 3] = [vec3(0.0, 0.0, 0.0); 3];
 
-            let d = 1.0;
             for j in 0..3 {
                 let model_coordinates = model.vertices[face[j]].to4();
 
