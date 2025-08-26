@@ -120,8 +120,13 @@ fn triangle(
                 continue;
             }
 
-            let one_over_z = alpha / a.z as f32 + beta / b.z as f32 + gamma / c.z as f32;
-            let z = 1. / one_over_z;
+            // let one_over_z = alpha / a.z as f32 + beta / b.z as f32 + gamma / c.z as f32;
+            // let z = 1. / one_over_z;
+
+            let z = alpha * a.z + beta * b.z + gamma * c.z;
+            let z = z / 2. + 0.5;
+            assert!(z >= 0.);
+            assert!(z <= 1.);
 
             if x >= 0 && x < image.width() as i32 && y >= 0 && y < image.height() as i32 {
                 if z < depths.get(x as usize, y as usize) {
@@ -179,16 +184,16 @@ fn main() -> std::io::Result<()> {
         let mut depths = DepthBuffer::new(args.canvas_size, args.canvas_size);
         let canvas_size = args.canvas_size as f32;
 
-        let angle = angle + 180;
+        let angle = angle;
         let angle = angle as f32 * 2.0 * f32::consts::PI / 360.0;
         let m_rot = Mat4::from_rotation_y(angle);
-        let m_trans = Mat4::from_translation(vec3(0.8, -0.6, 2.0));
+        let m_trans = Mat4::from_translation(vec3(0.0, 0., -2.));
         let m_model = &m_trans * &m_rot;
 
-        let m_screen = &Mat4::from_shear(vec3(canvas_size / 2.0, canvas_size / 2.0, 10_000.))
+        let m_screen = &Mat4::from_shear(vec3(canvas_size / 2.0, canvas_size / 2.0, 1.))
             * &Mat4::from_translation(vec3(1.0, 1.0, 0.0));
 
-        let light_dir = vec3(-0.2, 0.0, -1.).normalized();
+        let light_dir = vec3(-1., 0.0, -1.).normalized();
 
         let colors = [
             ("white", WHITE),
@@ -210,8 +215,20 @@ fn main() -> std::io::Result<()> {
             for j in 0..3 {
                 let mut v = &m_model * &model.vertices[face[j]].to4();
 
-                v.x = v.x * d / v.z;
-                v.y = v.y * d / v.z;
+                assert!(v.z < 0.);
+
+                let z_near = 1.;
+                let z_far = 10.;
+
+                let cC = (z_far + z_near) / (z_near - z_far);
+                let dD = 2. * z_far * z_near / (z_near - z_far);
+
+                v.x = v.x * d / -v.z;
+                v.y = v.y * d / -v.z;
+                v.z = (dD + cC * v.z) / -v.z;
+
+                assert!(v.z >= -1.);
+                assert!(v.z <= 1.);
 
                 screen_coords[j] = (&m_screen * &v).xyz();
                 world_coords[j] = v.xyz();
