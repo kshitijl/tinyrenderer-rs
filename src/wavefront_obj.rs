@@ -5,7 +5,7 @@ use nom::{
     bytes::complete::tag,
     character::complete::{digit1, space0, space1, u32},
     combinator::{map, map_res},
-    multi::separated_list1,
+    multi::{count, separated_list1},
     number::complete::float,
     sequence::{preceded, terminated},
 };
@@ -13,8 +13,9 @@ use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 
 pub struct Model {
-    pub vertices: Vec<Vec3<f32>>,
+    pub vertices: Vec<Vec3f>,
     pub faces: Vec<[usize; 3]>,
+    pub normals: Vec<Vec3f>,
 }
 
 impl Model {
@@ -24,6 +25,7 @@ impl Model {
 
         let mut vertices = Vec::new();
         let mut faces = Vec::new();
+        let mut normals = Vec::new();
 
         for line_result in reader.lines() {
             let line = line_result?;
@@ -36,6 +38,7 @@ impl Model {
                     match data {
                         ParsedLine::Vertex(v) => vertices.push(v),
                         ParsedLine::Triangle(f) => faces.push(f),
+                        ParsedLine::Normal(n) => normals.push(n.normalized()),
                     }
                 }
 
@@ -45,7 +48,11 @@ impl Model {
             }
         }
 
-        Ok(Self { vertices, faces })
+        Ok(Self {
+            vertices,
+            normals,
+            faces,
+        })
     }
 }
 
@@ -53,21 +60,42 @@ impl Model {
 enum ParsedLine {
     Vertex(Vec3<f32>),
     Triangle([usize; 3]),
+    Normal(Vec3<f32>),
+}
+
+fn parse_line(input: &str) -> IResult<&str, ParsedLine> {
+    preceded(space0, alt((parse_vertex, parse_face, parse_normal))).parse(input)
 }
 
 fn parse_face_triplet(input: &str) -> IResult<&str, u32> {
     terminated(u32, (tag("/"), digit1, tag("/"), digit1)).parse(input)
 }
 
-fn parse_vertex(input: &str) -> IResult<&str, ParsedLine> {
-    map(
-        preceded(
-            (tag("v"), space1),
-            (float, preceded(space1, float), preceded(space1, float)),
+fn parse_tagged_vec3<'a, F, T>(kind: &str, f: F, input: &'a str) -> IResult<&'a str, T>
+where
+    F: Fn(Vec3f) -> T,
+{
+    let (input, numbers) = preceded(
+        tag(kind),
+        (
+            preceded(space1, float),
+            preceded(space1, float),
+            preceded(space1, float),
         ),
-        |(x, y, z)| ParsedLine::Vertex(vec3(x, y, z)),
     )
-    .parse(input)
+    .parse(input)?;
+
+    let (x, y, z) = numbers;
+
+    Ok((input, f(vec3(x, y, z))))
+}
+
+fn parse_normal(input: &str) -> IResult<&str, ParsedLine> {
+    parse_tagged_vec3("vn", ParsedLine::Normal, input)
+}
+
+fn parse_vertex(input: &str) -> IResult<&str, ParsedLine> {
+    parse_tagged_vec3("v", ParsedLine::Vertex, input)
 }
 
 fn parse_face(input: &str) -> IResult<&str, ParsedLine> {
@@ -92,6 +120,31 @@ fn parse_face(input: &str) -> IResult<&str, ParsedLine> {
     .parse(input)
 }
 
-fn parse_line(input: &str) -> IResult<&str, ParsedLine> {
-    preceded(space0, alt((parse_vertex, parse_face))).parse(input)
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn it_parses_vertex() {
+        let p = parse_vertex("v -0.000581696 -0.734665 -0.623267")
+            .unwrap()
+            .1;
+
+        assert_eq!(
+            p,
+            ParsedLine::Vertex(vec3(-0.000581696, -0.734665, -0.623267))
+        );
+    }
+
+    #[test]
+    fn it_parses_vertex_normal() {
+        let p = parse_normal("vn -0.000581696 -0.734665 -0.623267")
+            .unwrap()
+            .1;
+
+        assert_eq!(
+            p,
+            ParsedLine::Normal(vec3(-0.000581696, -0.734665, -0.623267))
+        );
+    }
 }

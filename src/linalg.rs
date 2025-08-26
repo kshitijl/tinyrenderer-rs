@@ -45,6 +45,8 @@ pub struct Vec3<T> {
     pub z: T,
 }
 
+pub type Vec3f = Vec3<f32>;
+
 pub fn vec3<T>(x: T, y: T, z: T) -> Vec3<T> {
     Vec3 { x, y, z }
 }
