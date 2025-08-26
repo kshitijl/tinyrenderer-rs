@@ -259,23 +259,3 @@ fn main() -> std::io::Result<()> {
 
     Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_parses() {
-        let model = wavefront_obj::Model::from_file("./assets/head.obj").unwrap();
-
-        assert_eq!(model.num_faces(), 2492);
-        assert_eq!(model.num_vertices(), 1258);
-        assert_eq!(model.num_normals(), 1258);
-
-        let model = wavefront_obj::Model::from_file("./assets/cube.obj").unwrap();
-
-        assert_eq!(model.num_faces(), 8);
-        assert_eq!(model.num_vertices(), 8);
-        assert_eq!(model.num_normals(), 0);
-    }
-}

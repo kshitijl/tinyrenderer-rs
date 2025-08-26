@@ -163,4 +163,19 @@ mod tests {
             ParsedLine::Normal(vec3(-0.000581696, -0.734665, -0.623267))
         );
     }
+
+    #[test]
+    fn it_parses_files() {
+        let model = Model::from_file("./assets/head.obj").unwrap();
+
+        assert_eq!(model.num_faces(), 2492);
+        assert_eq!(model.num_vertices(), 1258);
+        assert_eq!(model.num_normals(), 1258);
+
+        let model = Model::from_file("./assets/cube.obj").unwrap();
+
+        assert_eq!(model.num_faces(), 8);
+        assert_eq!(model.num_vertices(), 8);
+        assert_eq!(model.num_normals(), 0);
+    }
 }
