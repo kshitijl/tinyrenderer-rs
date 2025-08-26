@@ -16,7 +16,9 @@ In this convention, you typically specify the camera looking towards negative Z,
 
 Objects with greater negative Z (i.e., smaller Z) are farther away from the camera.
 
-In NDC, after perspective divide, we want for the near plane that z_ndc = -1, and for the far plane z_ndc = +1.
+See https://www.songho.ca/opengl/gl_projectionmatrix.html for a derivation of the perspective projection matrix entries.
+
+In NDC, after perspective divide, we want for the near plane that z_ndc = -1, and for the far plane z_ndc = +1. But note that the near and far planes are at z = -z_near and z = -z_far. z_near and z_far are positive numbers. But we are facing the negative z direction, so the actual planes are at negative z coordinates.
 
 Also, for the depth test, OpenGL remaps [-1,1] -> [0,1]: z_depth = z_ndc/2 + 1/2. The near plane is z = 0.0, far plane is z = 1.0.
 */
@@ -185,12 +187,18 @@ fn main() -> std::io::Result<()> {
         let canvas_size = args.canvas_size as f32;
 
         let angle = angle;
-        let angle = angle as f32 * 2.0 * f32::consts::PI / 360.0;
+        let angle = (angle as f32).to_radians();
         let m_rot = Mat4::from_rotation_y(angle);
-        let m_trans = Mat4::from_translation(vec3(0.0, 0., -2.));
+        let m_trans = Mat4::from_translation(vec3(0.7, -0.7, -2.));
         let m_model = &m_trans * &m_rot;
 
-        let m_screen = &Mat4::from_shear(vec3(canvas_size / 2.0, canvas_size / 2.0, 1.))
+        let m_view = Mat4::identity();
+
+        let z_near = 1.;
+        let z_far = 10.;
+        let m_projection = Mat4::perspective(90., z_near, z_far);
+
+        let m_viewport = &Mat4::from_shear(vec3(canvas_size / 2.0, canvas_size / 2.0, 1.))
             * &Mat4::from_translation(vec3(1.0, 1.0, 0.0));
 
         let light_dir = vec3(-1., 0.0, -1.).normalized();
@@ -213,25 +221,28 @@ fn main() -> std::io::Result<()> {
 
             let d = 1.0;
             for j in 0..3 {
-                let mut v = &m_model * &model.vertices[face[j]].to4();
+                let model_coordinates = model.vertices[face[j]].to4();
 
-                assert!(v.z < 0.);
+                let world_coordinates = &m_model * &model_coordinates;
 
-                let z_near = 1.;
-                let z_far = 10.;
+                assert!(world_coordinates.z < 0.);
+                assert!(world_coordinates.w == 1.0);
 
-                let cC = (z_far + z_near) / (z_near - z_far);
-                let dD = 2. * z_far * z_near / (z_near - z_far);
+                let eye_coordinates = &m_view * &world_coordinates;
 
-                v.x = v.x * d / -v.z;
-                v.y = v.y * d / -v.z;
-                v.z = (dD + cC * v.z) / -v.z;
+                // TODO use the standard names clip, eye, viewport etc.
 
-                assert!(v.z >= -1.);
-                assert!(v.z <= 1.);
+                // TODO REALLY UNDERSTAND why the SIGN of cC and dD make such a
+                // difference in the depth test
 
-                screen_coords[j] = (&m_screen * &v).xyz();
-                world_coords[j] = v.xyz();
+                let clip_coordinates = &m_projection * &eye_coordinates;
+
+                let normalized_device_coordinates = clip_coordinates.perspective_divided();
+                assert!(normalized_device_coordinates.z >= -1.);
+                assert!(normalized_device_coordinates.z <= 1.);
+
+                screen_coords[j] = (&m_viewport * &normalized_device_coordinates).xyz();
+                world_coords[j] = normalized_device_coordinates.xyz();
             }
 
             let normal = ((world_coords[2] - world_coords[0])

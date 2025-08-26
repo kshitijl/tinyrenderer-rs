@@ -185,6 +185,15 @@ impl Vec4<f32> {
     pub fn normalized(self) -> Self {
         self / self.length()
     }
+
+    pub fn perspective_divided(self) -> Self {
+        Self {
+            x: self.x / self.w,
+            y: self.y / self.w,
+            z: self.z / self.w,
+            w: 1.,
+        }
+    }
 }
 
 impl<T: Add<Output = T>> Add for Vec4<T> {
@@ -272,6 +281,15 @@ impl Mat4<f32> {
         ])
     }
 
+    pub fn identity() -> Self {
+        Self::new([
+            [1., 0., 0., 0.],
+            [0., 1., 0., 0.],
+            [0., 0., 1., 0.],
+            [0., 0., 0., 1.],
+        ])
+    }
+
     pub fn from_shear(t: Vec3<f32>) -> Self {
         Self::new([
             [t.x, 0., 0., 0.],
@@ -281,12 +299,28 @@ impl Mat4<f32> {
         ])
     }
 
-    pub fn perspective(focal_length: f32) -> Self {
+    pub fn perspective(fovy_in_degrees: f32, z_near: f32, z_far: f32) -> Self {
+        assert!(fovy_in_degrees > 0.);
+        assert!(z_near > 0.);
+        assert!(z_far > 0.);
+        assert!(z_far > z_near);
+
+        let fovy_radians = fovy_in_degrees.to_radians();
+        let f = 1.0 / f32::tan(fovy_radians / 2.0); // cot (fovy/2)
+
+        assert!((f - 1.0).abs() < 1e-6);
+
+        let a = (z_far + z_near) / (z_near - z_far);
+        let b = 2. * z_far * z_near / (z_near - z_far);
+
+        assert!(a < 0.);
+        assert!(b < 0.);
+
         Self::new([
-            [1., 0., 0., 0.],
-            [0., 1., 0., 0.],
-            [0., 0., 1., 0.],
-            [0., 0., 0., 0.],
+            [f, 0., 0., 0.],
+            [0., f, 0., 0.],
+            [0., 0., a, b],
+            [0., 0., -1., 0.],
         ])
     }
 }
