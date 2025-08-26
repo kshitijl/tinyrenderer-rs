@@ -4,8 +4,8 @@ use nom::{
     branch::alt,
     bytes::complete::tag,
     character::complete::{digit1, space0, space1, u32},
-    combinator::{map, map_res},
-    multi::{count, separated_list1},
+    combinator::map_res,
+    multi::separated_list1,
     number::complete::float,
     sequence::{preceded, terminated},
 };
@@ -15,10 +15,26 @@ use std::io::{self, BufRead, BufReader};
 pub struct Model {
     vertices: Vec<Vec3f>,
     faces: Vec<[usize; 3]>,
-    pub normals: Vec<Vec3f>,
+    normals: Vec<Vec3f>,
 }
 
 impl Model {
+    pub fn num_faces(&self) -> usize {
+        self.faces.len()
+    }
+
+    pub fn num_vertices(&self) -> usize {
+        self.vertices.len()
+    }
+
+    pub fn num_normals(&self) -> usize {
+        self.normals.len()
+    }
+
+    pub fn vertex(&self, face_idx: usize, vertex_idx: usize) -> Vec3f {
+        self.vertices[self.faces[face_idx][vertex_idx]]
+    }
+
     pub fn from_file(filename: &str) -> io::Result<Self> {
         let file = File::open(filename)?;
         let reader = BufReader::new(file);

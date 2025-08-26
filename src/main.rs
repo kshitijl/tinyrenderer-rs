@@ -156,16 +156,13 @@ struct Args {
 
 fn main() -> std::io::Result<()> {
     let args = Args::parse();
-    let model = {
-        let mut model = wavefront_obj::Model::from_file(args.model.as_str()).unwrap();
-        model.faces.reverse();
-        model
-    };
+    let model = wavefront_obj::Model::from_file(args.model.as_str()).unwrap();
 
     println!(
-        "Parsed {} vertices and {} faces",
-        model.vertices.len(),
-        model.faces.len()
+        "Parsed {} vertices, {} faces, {} normals",
+        model.num_vertices(),
+        model.num_faces(),
+        model.num_normals()
     );
 
     let final_angle = if args.animate { 360 } else { 1 };
@@ -191,13 +188,12 @@ fn main() -> std::io::Result<()> {
 
         let light_dir = vec3(-1., 0.0, -1.).normalized();
 
-        for (_face_idx, face) in model.faces.iter().enumerate() {
+        for face_idx in 0..model.num_faces() {
             let mut screen_coords: [Vec3<f32>; 3] = [vec3(0., 0., 0.); 3];
-
             let mut world_coords: [Vec3<f32>; 3] = [vec3(0.0, 0.0, 0.0); 3];
 
             for j in 0..3 {
-                let model_coordinates = model.vertices[face[j]].to4();
+                let model_coordinates = model.vertex(face_idx, j).to4();
 
                 let world_coordinates = &m_model * &model_coordinates;
 
@@ -262,4 +258,24 @@ fn main() -> std::io::Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn it_parses() {
+        let model = wavefront_obj::Model::from_file("./assets/head.obj").unwrap();
+
+        assert_eq!(model.num_faces(), 2492);
+        assert_eq!(model.num_vertices(), 1258);
+        assert_eq!(model.num_normals(), 1258);
+
+        let model = wavefront_obj::Model::from_file("./assets/cube.obj").unwrap();
+
+        assert_eq!(model.num_faces(), 8);
+        assert_eq!(model.num_vertices(), 8);
+        assert_eq!(model.num_normals(), 0);
+    }
 }
