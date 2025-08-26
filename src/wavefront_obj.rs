@@ -13,8 +13,8 @@ use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 
 pub struct Model {
-    pub vertices: Vec<Vec3f>,
-    pub faces: Vec<[usize; 3]>,
+    vertices: Vec<Vec3f>,
+    faces: Vec<[usize; 3]>,
     pub normals: Vec<Vec3f>,
 }
 
