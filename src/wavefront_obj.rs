@@ -12,9 +12,15 @@ use nom::{
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 
+#[derive(Debug, PartialEq)]
+struct Face {
+    vertices: [usize; 3],
+    normals: [usize; 3],
+}
+
 pub struct Model {
     vertices: Vec<Vec3f>,
-    faces: Vec<[usize; 3]>,
+    faces: Vec<Face>,
     normals: Vec<Vec3f>,
 }
 
@@ -32,7 +38,11 @@ impl Model {
     }
 
     pub fn vertex(&self, face_idx: usize, vertex_idx: usize) -> Vec3f {
-        self.vertices[self.faces[face_idx][vertex_idx]]
+        self.vertices[self.faces[face_idx].vertices[vertex_idx]]
+    }
+
+    pub fn normal(&self, face_idx: usize, vertex_idx: usize) -> Vec3f {
+        self.normals[self.faces[face_idx].normals[vertex_idx]]
     }
 
     pub fn from_file(filename: &str) -> io::Result<Self> {
@@ -75,7 +85,7 @@ impl Model {
 #[derive(Debug, PartialEq)]
 enum ParsedLine {
     Vertex(Vec3<f32>),
-    Triangle([usize; 3]),
+    Triangle(Face),
     Normal(Vec3<f32>),
 }
 
@@ -83,8 +93,8 @@ fn parse_line(input: &str) -> IResult<&str, ParsedLine> {
     preceded(space0, alt((parse_vertex, parse_face, parse_normal))).parse(input)
 }
 
-fn parse_face_triplet(input: &str) -> IResult<&str, u32> {
-    terminated(u32, (tag("/"), digit1, tag("/"), digit1)).parse(input)
+fn parse_face_triplet(input: &str) -> IResult<&str, (u32, u32, u32)> {
+    (terminated(u32, tag("/")), terminated(u32, tag("/")), u32).parse(input)
 }
 
 fn parse_tagged_vec3<'a, F, T>(kind: &str, f: F, input: &'a str) -> IResult<&'a str, T>
@@ -120,14 +130,23 @@ fn parse_face(input: &str) -> IResult<&str, ParsedLine> {
             (tag("f"), space1),
             separated_list1(space1, parse_face_triplet),
         ),
-        |ids: Vec<u32>| -> Result<ParsedLine, _> {
+        |ids: Vec<(u32, u32, u32)>| -> Result<ParsedLine, _> {
             if ids.len() == 3 {
-                let arr = [
-                    ids[0] as usize - 1,
-                    ids[1] as usize - 1,
-                    ids[2] as usize - 1,
+                let vertices = [
+                    ids[0].0 as usize - 1,
+                    ids[1].0 as usize - 1,
+                    ids[2].0 as usize - 1,
                 ];
-                Ok(ParsedLine::Triangle(arr))
+
+                let normals = [
+                    ids[0].1 as usize - 1,
+                    ids[1].1 as usize - 1,
+                    ids[2].1 as usize - 1,
+                ];
+
+                let face = Face { vertices, normals };
+
+                Ok(ParsedLine::Triangle(face))
             } else {
                 Err("Face must have exactly 3 vertices")
             }
@@ -161,6 +180,19 @@ mod tests {
         assert_eq!(
             p,
             ParsedLine::Normal(vec3(-0.000581696, -0.734665, -0.623267))
+        );
+    }
+
+    #[test]
+    fn it_parses_face() {
+        let p = parse_face("f 83/64/83 96/74/96 95/73/95").unwrap().1;
+
+        assert_eq!(
+            p,
+            ParsedLine::Triangle(Face {
+                vertices: [82, 95, 94],
+                normals: [63, 73, 72]
+            })
         );
     }
 
