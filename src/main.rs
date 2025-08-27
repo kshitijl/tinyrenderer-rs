@@ -23,13 +23,12 @@ In NDC, after perspective divide, we want for the near plane that z_ndc = -1, an
 Also, for the depth test, OpenGL remaps [-1,1] -> [0,1]: z_depth = z_ndc/2 + 1/2. The near plane is z = 0.0, far plane is z = 1.0.
 */
 mod image;
-mod linalg;
 mod tga;
 mod wavefront_obj;
 
 use crate::image::*;
-use crate::linalg::*;
 use clap::Parser;
+use glam::{Mat4, Vec2, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles};
 use std::f32;
 
 fn linei32(ax: i32, ay: i32, bx: i32, by: i32, image: &mut Image, color: Color) {
@@ -75,23 +74,16 @@ fn linef32(ax: f32, ay: f32, bx: f32, by: f32, image: &mut Image, color: Color) 
     linei32(ax as i32, ay as i32, bx as i32, by as i32, image, color)
 }
 
-fn linevf32(a: Vec2<f32>, b: Vec2<f32>, image: &mut Image, color: Color) {
+fn linevf32(a: Vec2, b: Vec2, image: &mut Image, color: Color) {
     linef32(a.x, a.y, b.x, b.y, image, color)
 }
 
-fn signed_triangle_area(a: Vec2<f32>, b: Vec2<f32>, c: Vec2<f32>) -> f32 {
+fn signed_triangle_area(a: Vec2, b: Vec2, c: Vec2) -> f32 {
     let answer = (b.y - a.y) * (b.x + a.x) + (c.y - b.y) * (c.x + b.x) + (a.y - c.y) * (a.x + c.x);
     0.5 * answer as f32
 }
 
-fn triangle(
-    a: Vec3<f32>,
-    b: Vec3<f32>,
-    c: Vec3<f32>,
-    image: &mut Image,
-    depths: &mut DepthBuffer,
-    color: Color,
-) {
+fn triangle(a: Vec3, b: Vec3, c: Vec3, image: &mut Image, depths: &mut DepthBuffer, color: Color) {
     let total_area = signed_triangle_area(a.xy(), b.xy(), c.xy());
 
     let smallest_x = f32::min(a.x, f32::min(b.x, c.x)) as i32;
@@ -101,7 +93,7 @@ fn triangle(
 
     for x in smallest_x..=biggest_x {
         for y in smallest_y..=biggest_y {
-            let p = vec2(x as f32, y as f32);
+            let p = Vec2::new(x as f32, y as f32);
 
             let alpha = signed_triangle_area(p, b.xy(), c.xy()) / total_area;
             if alpha < 0.0 {
@@ -131,6 +123,11 @@ fn triangle(
             }
         }
     }
+}
+
+fn perspective_divided(v: Vec4) -> Vec4 {
+    // Vec4::new(v.x / v.w, v.y / v.w, v.z / v.w, 1.)
+    v / v.w
 }
 
 #[derive(Parser)]
@@ -174,28 +171,28 @@ fn main() -> std::io::Result<()> {
         let angle = angle;
         let angle = (angle as f32).to_radians();
         let m_rot = Mat4::from_rotation_y(angle);
-        let m_trans = Mat4::from_translation(vec3(0.7, -0.7, -2.));
-        let m_model = &m_trans * &m_rot;
+        let m_trans = Mat4::from_translation(Vec3::new(0.7, -0.7, -2.));
+        let m_model = m_trans * m_rot;
 
-        let m_view = Mat4::identity();
+        let m_view = Mat4::IDENTITY;
 
         let z_near = 1.;
         let z_far = 10.;
-        let m_projection = Mat4::perspective(90., z_near, z_far);
+        let m_projection = Mat4::perspective_rh(f32::to_radians(90.), 1.0, z_near, z_far);
 
-        let m_viewport = &Mat4::from_shear(vec3(canvas_size / 2.0, canvas_size / 2.0, 1.))
-            * &Mat4::from_translation(vec3(1.0, 1.0, 0.0));
+        let m_viewport = Mat4::from_scale(Vec3::new(canvas_size / 2.0, canvas_size / 2.0, 1.))
+            * Mat4::from_translation(Vec3::new(1.0, 1.0, 0.0));
 
-        let light_dir = vec3(-1., 0.0, -1.).normalized();
+        let light_dir = Vec3::new(-1., 0.0, -1.).normalize();
 
         for face_idx in 0..model.num_faces() {
-            let mut screen_coords: [Vec3<f32>; 3] = [vec3(0., 0., 0.); 3];
-            let mut world_coords: [Vec3<f32>; 3] = [vec3(0.0, 0.0, 0.0); 3];
+            let mut screen_coords: [Vec3; 3] = [Vec3::new(0., 0., 0.); 3];
+            let mut world_coords: [Vec3; 3] = [Vec3::new(0.0, 0.0, 0.0); 3];
 
             for j in 0..3 {
-                let model_coordinates = model.vertex(face_idx, j).to4();
+                let model_coordinates = Vec4::from((model.vertex(face_idx, j), 1.0));
 
-                let world_coordinates = &m_model * &model_coordinates;
+                let world_coordinates = m_model * model_coordinates;
 
                 assert!(world_coordinates.z < 0.);
                 assert!(world_coordinates.w == 1.0);
@@ -204,7 +201,7 @@ fn main() -> std::io::Result<()> {
 
                 let clip_coordinates = &m_projection * &eye_coordinates;
 
-                let normalized_device_coordinates = clip_coordinates.perspective_divided();
+                let normalized_device_coordinates = perspective_divided(clip_coordinates);
                 assert!(normalized_device_coordinates.z >= -1.);
                 assert!(normalized_device_coordinates.z <= 1.);
 

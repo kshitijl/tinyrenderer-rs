@@ -1,9 +1,9 @@
-use crate::linalg::*;
+use glam::{Vec3, vec3};
 use nom::{
     IResult, Parser,
     branch::alt,
     bytes::complete::tag,
-    character::complete::{digit1, space0, space1, u32},
+    character::complete::{space0, space1, u32},
     combinator::map_res,
     multi::separated_list1,
     number::complete::float,
@@ -19,9 +19,9 @@ struct Face {
 }
 
 pub struct Model {
-    vertices: Vec<Vec3f>,
+    vertices: Vec<Vec3>,
     faces: Vec<Face>,
-    normals: Vec<Vec3f>,
+    normals: Vec<Vec3>,
 }
 
 impl Model {
@@ -37,11 +37,11 @@ impl Model {
         self.normals.len()
     }
 
-    pub fn vertex(&self, face_idx: usize, vertex_idx: usize) -> Vec3f {
+    pub fn vertex(&self, face_idx: usize, vertex_idx: usize) -> Vec3 {
         self.vertices[self.faces[face_idx].vertices[vertex_idx]]
     }
 
-    pub fn normal(&self, face_idx: usize, vertex_idx: usize) -> Vec3f {
+    pub fn normal(&self, face_idx: usize, vertex_idx: usize) -> Vec3 {
         self.normals[self.faces[face_idx].normals[vertex_idx]]
     }
 
@@ -64,7 +64,7 @@ impl Model {
                     match data {
                         ParsedLine::Vertex(v) => vertices.push(v),
                         ParsedLine::Triangle(f) => faces.push(f),
-                        ParsedLine::Normal(n) => normals.push(n.normalized()),
+                        ParsedLine::Normal(n) => normals.push(n.normalize()),
                     }
                 }
 
@@ -84,9 +84,9 @@ impl Model {
 
 #[derive(Debug, PartialEq)]
 enum ParsedLine {
-    Vertex(Vec3<f32>),
+    Vertex(Vec3),
     Triangle(Face),
-    Normal(Vec3<f32>),
+    Normal(Vec3),
 }
 
 fn parse_line(input: &str) -> IResult<&str, ParsedLine> {
@@ -99,7 +99,7 @@ fn parse_face_triplet(input: &str) -> IResult<&str, (u32, u32, u32)> {
 
 fn parse_tagged_vec3<'a, F, T>(kind: &str, f: F, input: &'a str) -> IResult<&'a str, T>
 where
-    F: Fn(Vec3f) -> T,
+    F: Fn(Vec3) -> T,
 {
     let (input, numbers) = preceded(
         tag(kind),
