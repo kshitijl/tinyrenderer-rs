@@ -202,11 +202,6 @@ fn main() -> std::io::Result<()> {
 
                 let eye_coordinates = &m_view * &world_coordinates;
 
-                // TODO use the standard names clip, eye, viewport etc.
-
-                // TODO REALLY UNDERSTAND why the SIGN of cC and dD make such a
-                // difference in the depth test
-
                 let clip_coordinates = &m_projection * &eye_coordinates;
 
                 let normalized_device_coordinates = clip_coordinates.perspective_divided();
@@ -217,9 +212,14 @@ fn main() -> std::io::Result<()> {
                 world_coords[j] = normalized_device_coordinates.xyz();
             }
 
-            let normal = ((world_coords[2] - world_coords[0])
-                .cross(world_coords[1] - world_coords[0]))
-            .normalized();
+            // TODO transform the normal properly
+            // TODO use all 3 normals, not just this one
+            // TODO try toon and gouraud shading
+            let normal = model.normal(face_idx, 0);
+
+            // let normal = ((world_coords[2] - world_coords[0])
+            //     .cross(world_coords[1] - world_coords[0]))
+            // .normalized();
 
             let intensity = normal.dot(light_dir).abs();
             // let intensity = 0.99f31;

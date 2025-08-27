@@ -139,9 +139,9 @@ fn parse_face(input: &str) -> IResult<&str, ParsedLine> {
                 ];
 
                 let normals = [
-                    ids[0].1 as usize - 1,
-                    ids[1].1 as usize - 1,
-                    ids[2].1 as usize - 1,
+                    ids[0].2 as usize - 1,
+                    ids[1].2 as usize - 1,
+                    ids[2].2 as usize - 1,
                 ];
 
                 let face = Face { vertices, normals };
@@ -191,7 +191,7 @@ mod tests {
             p,
             ParsedLine::Triangle(Face {
                 vertices: [82, 95, 94],
-                normals: [63, 73, 72]
+                normals: [82, 95, 94]
             })
         );
     }
