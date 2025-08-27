@@ -188,14 +188,12 @@ fn main() -> std::io::Result<()> {
         let mut depths = DepthBuffer::new(args.canvas_size, args.canvas_size);
         let canvas_size = args.canvas_size as f32;
 
-        // let angle = -20;
-        // let angle = (angle as f32).to_radians();
-        // let m_rot = Mat4::from_rotation_y(angle) * Mat4::from_rotation_x(5.0f32.to_radians());
-        // let m_trans = Mat4::from_translation(Vec3::new(0., 0.0, 0.));
-        // let m_model = m_trans * m_rot;
-        let m_model = Mat4::IDENTITY;
+        let angle = (angle as f32).to_radians();
+        let m_rot = Mat4::from_rotation_y(angle);
+        let m_trans = Mat4::from_translation(Vec3::new(0., 0.0, 0.));
+        let m_model = m_trans * m_rot;
 
-        let light_dir = Vec3::new(-1., -1., -1.).normalize();
+        let light_dir = Vec3::new(-1., 0., -1.).normalize();
         let eye = vec3(1., 1., 3.0);
         let center = vec3(0., 0., 0.);
         let up = vec3(0., 1., 0.);
@@ -203,10 +201,10 @@ fn main() -> std::io::Result<()> {
 
         let z_near = 1.;
         let z_far = 10.;
-        let m_projection = Mat4::perspective_rh_gl(f32::to_radians(90.), 1.0, z_near, z_far);
+        let m_projection = Mat4::perspective_rh_gl(f32::to_radians(60.), 1.0, z_near, z_far);
 
         let m_mvp = m_projection * m_view * m_model;
-        let m_mvpit = m_mvp.inverse().transpose();
+        let m_mvpit = (m_projection * m_view * m_model).inverse().transpose();
 
         let m_viewport = Mat4::from_scale(Vec3::new(canvas_size / 2.0, canvas_size / 2.0, 1.))
             * Mat4::from_translation(Vec3::new(1.0, 1.0, 0.0));
@@ -237,15 +235,11 @@ fn main() -> std::io::Result<()> {
                 world_coords[j] = normalized_device_coordinates.xyz();
             }
 
-            // TODO transform the normal properly
-            // TODO use all 3 normals, not just this one
-            // TODO try toon and gouraud shading
             let mut normals = Vec::new();
             for i in 0..3 {
                 let normal = model.normal(face_idx, i);
-                let normal = normal.with_z(-normal.z);
                 let normal = m_mvpit * Vec4::from((normal, 0.));
-                let normal = -normal.xyz().normalize();
+                let normal = normal.xyz();
                 normals.push(normal);
             }
 
@@ -267,6 +261,9 @@ fn main() -> std::io::Result<()> {
                 normals[0],
                 normals[1],
                 normals[2],
+                // normal,
+                // normal,
+                // normal,
                 &mut image,
                 &mut depths,
             );
