@@ -28,7 +28,7 @@ mod wavefront_obj;
 
 use crate::image::*;
 use clap::Parser;
-use glam::{Mat4, Vec2, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles};
+use glam::{Mat4, Vec2, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec3};
 use std::f32;
 
 fn linei32(ax: i32, ay: i32, bx: i32, by: i32, image: &mut Image, color: Color) {
@@ -83,7 +83,17 @@ fn signed_triangle_area(a: Vec2, b: Vec2, c: Vec2) -> f32 {
     0.5 * answer as f32
 }
 
-fn triangle(a: Vec3, b: Vec3, c: Vec3, image: &mut Image, depths: &mut DepthBuffer, color: Color) {
+fn triangle(
+    a: Vec3,
+    b: Vec3,
+    c: Vec3,
+    light_dir: Vec3,
+    na: Vec3,
+    nb: Vec3,
+    nc: Vec3,
+    image: &mut Image,
+    depths: &mut DepthBuffer,
+) {
     let total_area = signed_triangle_area(a.xy(), b.xy(), c.xy());
 
     let smallest_x = f32::min(a.x, f32::min(b.x, c.x)) as i32;
@@ -116,9 +126,20 @@ fn triangle(a: Vec3, b: Vec3, c: Vec3, image: &mut Image, depths: &mut DepthBuff
             assert!(z <= 1.);
 
             if x >= 0 && x < image.width() as i32 && y >= 0 && y < image.height() as i32 {
-                if z < depths.get(x as usize, y as usize) {
-                    depths.set(x as usize, y as usize, z);
-                    image.set(x as usize, y as usize, color);
+                let x = x as usize;
+                let y = y as usize;
+                if z < depths.get(x, y) {
+                    depths.set(x, y, z);
+
+                    let normal = alpha * na + beta * nb + gamma * nc;
+                    let normal = normal.normalize();
+                    let intensity = normal.dot(light_dir).clamp(0., 1.);
+                    let intensity = (intensity * 6.).round() / 6.;
+                    let color = vec3(255., 155., 0.) * intensity;
+                    let color = color.as_u8vec3();
+                    let color = coloru8(color.x, color.y, color.z);
+
+                    image.set(x, y, color);
                 }
             }
         }
@@ -168,22 +189,25 @@ fn main() -> std::io::Result<()> {
         let mut depths = DepthBuffer::new(args.canvas_size, args.canvas_size);
         let canvas_size = args.canvas_size as f32;
 
-        let angle = angle;
+        let angle = -20;
         let angle = (angle as f32).to_radians();
-        let m_rot = Mat4::from_rotation_y(angle);
-        let m_trans = Mat4::from_translation(Vec3::new(0.7, -0.7, -2.));
+        let m_rot = Mat4::from_rotation_y(angle) * Mat4::from_rotation_x(5.0f32.to_radians());
+        let m_trans = Mat4::from_translation(Vec3::new(0., -0.5, -2.5));
         let m_model = m_trans * m_rot;
 
         let m_view = Mat4::IDENTITY;
 
         let z_near = 1.;
         let z_far = 10.;
-        let m_projection = Mat4::perspective_rh(f32::to_radians(90.), 1.0, z_near, z_far);
+        let m_projection = Mat4::perspective_rh(f32::to_radians(80.), 1.0, z_near, z_far);
+
+        let m_mvp = m_projection * m_view * m_model;
+        let m_mvpit = m_mvp.inverse().transpose();
 
         let m_viewport = Mat4::from_scale(Vec3::new(canvas_size / 2.0, canvas_size / 2.0, 1.))
             * Mat4::from_translation(Vec3::new(1.0, 1.0, 0.0));
 
-        let light_dir = Vec3::new(-1., 0.0, -1.).normalize();
+        let light_dir = Vec3::new(-1., -1., -1.).normalize();
 
         for face_idx in 0..model.num_faces() {
             let mut screen_coords: [Vec3; 3] = [Vec3::new(0., 0., 0.); 3];
@@ -201,6 +225,8 @@ fn main() -> std::io::Result<()> {
 
                 let clip_coordinates = &m_projection * &eye_coordinates;
 
+                let clip_coordinates = m_mvp * model_coordinates;
+
                 let normalized_device_coordinates = perspective_divided(clip_coordinates);
                 assert!(normalized_device_coordinates.z >= -1.);
                 assert!(normalized_device_coordinates.z <= 1.);
@@ -212,26 +238,35 @@ fn main() -> std::io::Result<()> {
             // TODO transform the normal properly
             // TODO use all 3 normals, not just this one
             // TODO try toon and gouraud shading
-            let normal = model.normal(face_idx, 0);
+            let mut normals = Vec::new();
+            for i in 0..3 {
+                let normal = model.normal(face_idx, i);
+                let normal = normal.with_z(-normal.z);
+                let normal = m_mvpit * Vec4::from((normal, 0.));
+                let normal = -normal.xyz().normalize();
+                normals.push(normal);
+            }
 
-            // let normal = ((world_coords[2] - world_coords[0])
+            // let normal = ((world_coords[0] - world_coords[2])
             //     .cross(world_coords[1] - world_coords[0]))
-            // .normalized();
+            // .normalize();
 
-            let intensity = normal.dot(light_dir).abs();
-            // let intensity = 0.99f31;
+            // let intensity = normal.dot(light_dir);
 
-            let gray = (intensity * 255.0).clamp(0.0, 255.0) as u8;
-            let triangle_color = coloru8(gray, gray, gray);
+            // let gray = (intensity * 255.0).clamp(0.0, 255.0) as u8;
+            // let triangle_color = coloru8(gray, gray, gray);
             // let triangle_color = WHITE;
 
             triangle(
                 screen_coords[0],
                 screen_coords[1],
                 screen_coords[2],
+                light_dir,
+                normals[0],
+                normals[1],
+                normals[2],
                 &mut image,
                 &mut depths,
-                triangle_color,
             );
 
             if args.wireframe {

@@ -1,12 +1,9 @@
-#[derive(Copy, Clone)]
-pub struct Color {
-    pub r: u8,
-    pub g: u8,
-    pub b: u8,
-}
+use glam::U8Vec3;
+
+pub type Color = U8Vec3;
 
 pub const fn coloru8(r: u8, g: u8, b: u8) -> Color {
-    Color { r, g, b }
+    U8Vec3::new(r, g, b)
 }
 
 pub const WHITE: Color = coloru8(255, 255, 255);
@@ -48,9 +45,9 @@ impl Image {
     #[inline]
     pub fn set(&mut self, x: usize, y: usize, color: Color) {
         let idx = (y * self.width as usize + x) * 3;
-        self.buf[idx + 0] = color.r;
-        self.buf[idx + 1] = color.g;
-        self.buf[idx + 2] = color.b;
+        self.buf[idx + 0] = color.x;
+        self.buf[idx + 1] = color.y;
+        self.buf[idx + 2] = color.z;
     }
 }
 
