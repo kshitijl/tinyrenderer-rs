@@ -137,7 +137,6 @@ fn triangle(
                     let intensity = (intensity * 6.).round() / 6.;
                     let color = vec3(255., 155., 0.) * intensity;
                     let color = color.as_u8vec3();
-                    let color = coloru8(color.x, color.y, color.z);
 
                     image.set(x, y, color);
                 }
@@ -189,25 +188,28 @@ fn main() -> std::io::Result<()> {
         let mut depths = DepthBuffer::new(args.canvas_size, args.canvas_size);
         let canvas_size = args.canvas_size as f32;
 
-        let angle = -20;
-        let angle = (angle as f32).to_radians();
-        let m_rot = Mat4::from_rotation_y(angle) * Mat4::from_rotation_x(5.0f32.to_radians());
-        let m_trans = Mat4::from_translation(Vec3::new(0., -0.5, -2.5));
-        let m_model = m_trans * m_rot;
+        // let angle = -20;
+        // let angle = (angle as f32).to_radians();
+        // let m_rot = Mat4::from_rotation_y(angle) * Mat4::from_rotation_x(5.0f32.to_radians());
+        // let m_trans = Mat4::from_translation(Vec3::new(0., 0.0, 0.));
+        // let m_model = m_trans * m_rot;
+        let m_model = Mat4::IDENTITY;
 
-        let m_view = Mat4::IDENTITY;
+        let light_dir = Vec3::new(-1., -1., -1.).normalize();
+        let eye = vec3(1., 1., 3.0);
+        let center = vec3(0., 0., 0.);
+        let up = vec3(0., 1., 0.);
+        let m_view = Mat4::look_at_rh(eye, center, up);
 
         let z_near = 1.;
         let z_far = 10.;
-        let m_projection = Mat4::perspective_rh(f32::to_radians(80.), 1.0, z_near, z_far);
+        let m_projection = Mat4::perspective_rh_gl(f32::to_radians(90.), 1.0, z_near, z_far);
 
         let m_mvp = m_projection * m_view * m_model;
         let m_mvpit = m_mvp.inverse().transpose();
 
         let m_viewport = Mat4::from_scale(Vec3::new(canvas_size / 2.0, canvas_size / 2.0, 1.))
             * Mat4::from_translation(Vec3::new(1.0, 1.0, 0.0));
-
-        let light_dir = Vec3::new(-1., -1., -1.).normalize();
 
         for face_idx in 0..model.num_faces() {
             let mut screen_coords: [Vec3; 3] = [Vec3::new(0., 0., 0.); 3];
@@ -218,10 +220,10 @@ fn main() -> std::io::Result<()> {
 
                 let world_coordinates = m_model * model_coordinates;
 
-                assert!(world_coordinates.z < 0.);
-                assert!(world_coordinates.w == 1.0);
-
                 let eye_coordinates = &m_view * &world_coordinates;
+
+                assert!(eye_coordinates.z < 0.);
+                assert!(eye_coordinates.w == 1.0);
 
                 let clip_coordinates = &m_projection * &eye_coordinates;
 
