@@ -36,8 +36,9 @@ use log;
 use pixels::{Pixels, SurfaceTexture};
 use std::sync::Arc;
 use winit::application::ApplicationHandler;
-use winit::event::WindowEvent;
+use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
+use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Window, WindowId};
 
 fn log_error<E: std::error::Error + 'static>(method_name: &str, err: E) {
@@ -49,6 +50,7 @@ fn log_error<E: std::error::Error + 'static>(method_name: &str, err: E) {
 
 struct World {
     image: Image,
+    depths: DepthBuffer,
     width: usize,
 }
 
@@ -162,6 +164,7 @@ impl World {
 
         Self {
             image,
+            depths,
             width: args.canvas_size as usize,
         }
     }
@@ -225,6 +228,31 @@ impl ApplicationHandler for App {
     }
     fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
         match event {
+            WindowEvent::PinchGesture { .. } => {
+                log::info!("pinch");
+            }
+            WindowEvent::MouseWheel { .. } => {
+                log::info!("mousewheel");
+            }
+            WindowEvent::MouseInput { .. } => {
+                log::info!("mouseinput");
+            }
+            WindowEvent::CursorMoved { .. } => {
+                log::info!("cursormoved");
+            }
+            WindowEvent::KeyboardInput {
+                device_id,
+                event,
+                is_synthetic,
+            } => {
+                log::info!("keyboard {:?} {:?} {}", device_id, event, is_synthetic);
+                if event.state == ElementState::Pressed {
+                    if event.physical_key == PhysicalKey::Code(KeyCode::Escape) {
+                        log::info!("bye");
+                        event_loop.exit();
+                    }
+                }
+            }
             WindowEvent::CloseRequested => {
                 println!("The close button was pressed; stopping");
                 event_loop.exit();
