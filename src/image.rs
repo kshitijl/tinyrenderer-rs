@@ -49,6 +49,12 @@ impl Image {
         self.buf[idx + 1] = color.y;
         self.buf[idx + 2] = color.z;
     }
+    #[inline]
+    pub fn get(&self, x: usize, y: usize) -> Color {
+        let idx = (y * self.width as usize + x) * 3;
+
+        Color::new(self.buf[idx + 0], self.buf[idx + 1], self.buf[idx + 2])
+    }
 }
 
 pub struct DepthBuffer {

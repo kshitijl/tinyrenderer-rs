@@ -32,54 +32,151 @@ use glam::{Mat4, Vec2, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec3};
 use std::f32;
 
 use error_iter::ErrorIter as _;
-use log::error;
-use pixels::{Error, Pixels, SurfaceTexture};
+use log;
+use pixels::{Pixels, SurfaceTexture};
 use std::sync::Arc;
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::window::{Window, WindowId};
 
-const WIDTH: u32 = 320;
-const HEIGHT: u32 = 240;
-const BOX_SIZE: i16 = 64;
-
 fn log_error<E: std::error::Error + 'static>(method_name: &str, err: E) {
-    error!("{method_name}() failed: {err}");
+    log::error!("{method_name}() failed: {err}");
     for source in err.sources().skip(1) {
-        error!("  Caused by: {source}");
+        log::error!("  Caused by: {source}");
     }
 }
 
 struct World {
-    box_x: i16,
-    box_y: i16,
-    velocity_x: i16,
-    velocity_y: i16,
+    image: Image,
+    width: usize,
 }
 
 impl World {
     /// Create a new `World` instance that can draw a moving box.
-    fn new() -> Self {
+    fn new(args: &Args) -> Self {
+        let model = wavefront_obj::Model::from_file(args.model.as_str()).unwrap();
+
+        log::info!(
+            "Parsed {} vertices, {} faces, {} normals",
+            model.num_vertices(),
+            model.num_faces(),
+            model.num_normals()
+        );
+
+        let mut image = Image::new(args.canvas_size, args.canvas_size);
+        let mut depths = DepthBuffer::new(args.canvas_size, args.canvas_size);
+        let canvas_size = args.canvas_size as f32;
+
+        let angle = 0.;
+        let m_rot = Mat4::from_rotation_y(angle);
+        let m_trans = Mat4::from_translation(Vec3::new(0., 0.0, 0.));
+        let m_model = m_trans * m_rot;
+
+        let light_dir = Vec3::new(-1., 0., -1.).normalize();
+        let eye = vec3(1., 1., 3.0);
+        let center = vec3(0., 0., 0.);
+        let up = vec3(0., 1., 0.);
+        let m_view = Mat4::look_at_rh(eye, center, up);
+
+        let z_near = 1.;
+        let z_far = 10.;
+        let m_projection = Mat4::perspective_rh_gl(f32::to_radians(60.), 1.0, z_near, z_far);
+
+        let m_mvp = m_projection * m_view * m_model;
+        let m_mvpit = (m_projection * m_view * m_model).inverse().transpose();
+
+        let m_viewport = Mat4::from_scale(Vec3::new(canvas_size / 2.0, canvas_size / 2.0, 1.))
+            * Mat4::from_translation(Vec3::new(1.0, 1.0, 0.0));
+
+        for face_idx in 0..model.num_faces() {
+            let mut screen_coords: [Vec3; 3] = [Vec3::new(0., 0., 0.); 3];
+            let mut world_coords: [Vec3; 3] = [Vec3::new(0.0, 0.0, 0.0); 3];
+
+            for j in 0..3 {
+                let model_coordinates = Vec4::from((model.vertex(face_idx, j), 1.0));
+
+                let world_coordinates = m_model * model_coordinates;
+
+                let eye_coordinates = &m_view * &world_coordinates;
+
+                assert!(eye_coordinates.z < 0.);
+                assert!(eye_coordinates.w == 1.0);
+
+                let clip_coordinates = &m_projection * &eye_coordinates;
+
+                let clip_coordinates = m_mvp * model_coordinates;
+
+                let normalized_device_coordinates = perspective_divided(clip_coordinates);
+                assert!(normalized_device_coordinates.z >= -1.);
+                assert!(normalized_device_coordinates.z <= 1.);
+
+                screen_coords[j] = (&m_viewport * &normalized_device_coordinates).xyz();
+                world_coords[j] = normalized_device_coordinates.xyz();
+            }
+
+            let mut normals = Vec::new();
+            for i in 0..3 {
+                let normal = model.normal(face_idx, i);
+                let normal = m_mvpit * Vec4::from((normal, 0.));
+                let normal = normal.xyz();
+                normals.push(normal);
+            }
+
+            // let normal = ((world_coords[0] - world_coords[2])
+            //     .cross(world_coords[1] - world_coords[0]))
+            // .normalize();
+
+            // let intensity = normal.dot(light_dir);
+
+            // let gray = (intensity * 255.0).clamp(0.0, 255.0) as u8;
+            // let triangle_color = coloru8(gray, gray, gray);
+            // let triangle_color = WHITE;
+
+            triangle(
+                screen_coords[0],
+                screen_coords[1],
+                screen_coords[2],
+                light_dir,
+                normals[0],
+                normals[1],
+                normals[2],
+                // normal,
+                // normal,
+                // normal,
+                &mut image,
+                &mut depths,
+            );
+
+            if args.wireframe {
+                for i in 0..3 {
+                    linevf32(
+                        screen_coords[i % 3].xy(),
+                        screen_coords[(i + 1) % 3].xy(),
+                        &mut image,
+                        RED,
+                    );
+                }
+            }
+        }
+
         Self {
-            box_x: 24,
-            box_y: 16,
-            velocity_x: 1,
-            velocity_y: 1,
+            image,
+            width: args.canvas_size as usize,
         }
     }
 
     /// Update the `World` internal state; bounce the box around the screen.
     fn update(&mut self) {
-        if self.box_x <= 0 || self.box_x + BOX_SIZE > WIDTH as i16 {
-            self.velocity_x *= -1;
-        }
-        if self.box_y <= 0 || self.box_y + BOX_SIZE > HEIGHT as i16 {
-            self.velocity_y *= -1;
-        }
+        // if self.box_x <= 0 || self.box_x + BOX_SIZE > WIDTH as i16 {
+        //     self.velocity_x *= -1;
+        // }
+        // if self.box_y <= 0 || self.box_y + BOX_SIZE > HEIGHT as i16 {
+        //     self.velocity_y *= -1;
+        // }
 
-        self.box_x += self.velocity_x;
-        self.box_y += self.velocity_y;
+        // self.box_x += self.velocity_x;
+        // self.box_y += self.velocity_y;
     }
 
     /// Draw the `World` state to the frame buffer.
@@ -87,19 +184,11 @@ impl World {
     /// Assumes the default texture format: `wgpu::TextureFormat::Rgba8UnormSrgb`
     fn draw(&self, frame: &mut [u8]) {
         for (i, pixel) in frame.chunks_exact_mut(4).enumerate() {
-            let x = (i % WIDTH as usize) as i16;
-            let y = (i / WIDTH as usize) as i16;
+            let x = (i % self.width) as usize;
+            let y = (i / self.width) as usize;
 
-            let inside_the_box = x >= self.box_x
-                && x < self.box_x + BOX_SIZE
-                && y >= self.box_y
-                && y < self.box_y + BOX_SIZE;
-
-            let rgba = if inside_the_box {
-                [0x5e, 0x48, 0xe8, 0xff]
-            } else {
-                [0x48, 0xb2, 0xe8, 0xff]
-            };
+            let color = self.image.get(x, self.width - y - 1);
+            let rgba = [color.x, color.y, color.z, 0xff];
 
             pixel.copy_from_slice(&rgba);
         }
@@ -113,11 +202,11 @@ struct App {
 }
 
 impl App {
-    fn new() -> Self {
+    fn new(world: World) -> Self {
         Self {
             window: None,
             pixels: None,
-            world: World::new(),
+            world,
         }
     }
 }
@@ -135,7 +224,11 @@ impl ApplicationHandler for App {
             let window_size = window.inner_size();
             let surface_texture =
                 SurfaceTexture::new(window_size.width, window_size.height, window.clone());
-            match Pixels::new(WIDTH, HEIGHT, surface_texture) {
+            match Pixels::new(
+                self.world.width as u32,
+                self.world.width as u32,
+                surface_texture,
+            ) {
                 Ok(pixels) => {
                     window.request_redraw();
                     Some(pixels)
@@ -324,10 +417,6 @@ struct Args {
     /// Model file
     model: String,
 
-    /// Produce many frames, not just one
-    #[arg(short, long)]
-    animate: bool,
-
     /// Output image size in pixels. We only do square images for now.
     #[arg(short, long, default_value_t = 800)]
     canvas_size: u16,
@@ -341,7 +430,10 @@ struct Args {
 }
 
 fn main() -> std::io::Result<()> {
+    env_logger::init();
+
     let args = Args::parse();
+    let world = World::new(&args);
 
     let event_loop = EventLoop::new().unwrap();
 
@@ -349,123 +441,16 @@ fn main() -> std::io::Result<()> {
     // dispatched any events. This is ideal for games and similar applications.
     event_loop.set_control_flow(ControlFlow::Poll);
 
-    let mut app = App::new();
-    event_loop.run_app(&mut app);
+    let mut app = App::new(world);
+    event_loop.run_app(&mut app).unwrap();
 
-    let model = wavefront_obj::Model::from_file(args.model.as_str()).unwrap();
+    // let tga = tga::TgaFile::from_image(image);
+    // tga.save_to_path(format!("raw-output/frame-{:02}.tga", idx).as_str())?;
 
-    println!(
-        "Parsed {} vertices, {} faces, {} normals",
-        model.num_vertices(),
-        model.num_faces(),
-        model.num_normals()
-    );
-
-    let final_angle = if args.animate { 360 } else { 1 };
-    for (idx, angle) in (0..final_angle).step_by(8).enumerate() {
-        let mut image = Image::new(args.canvas_size, args.canvas_size);
-        let mut depths = DepthBuffer::new(args.canvas_size, args.canvas_size);
-        let canvas_size = args.canvas_size as f32;
-
-        let angle = (angle as f32).to_radians();
-        let m_rot = Mat4::from_rotation_y(angle);
-        let m_trans = Mat4::from_translation(Vec3::new(0., 0.0, 0.));
-        let m_model = m_trans * m_rot;
-
-        let light_dir = Vec3::new(-1., 0., -1.).normalize();
-        let eye = vec3(1., 1., 3.0);
-        let center = vec3(0., 0., 0.);
-        let up = vec3(0., 1., 0.);
-        let m_view = Mat4::look_at_rh(eye, center, up);
-
-        let z_near = 1.;
-        let z_far = 10.;
-        let m_projection = Mat4::perspective_rh_gl(f32::to_radians(60.), 1.0, z_near, z_far);
-
-        let m_mvp = m_projection * m_view * m_model;
-        let m_mvpit = (m_projection * m_view * m_model).inverse().transpose();
-
-        let m_viewport = Mat4::from_scale(Vec3::new(canvas_size / 2.0, canvas_size / 2.0, 1.))
-            * Mat4::from_translation(Vec3::new(1.0, 1.0, 0.0));
-
-        for face_idx in 0..model.num_faces() {
-            let mut screen_coords: [Vec3; 3] = [Vec3::new(0., 0., 0.); 3];
-            let mut world_coords: [Vec3; 3] = [Vec3::new(0.0, 0.0, 0.0); 3];
-
-            for j in 0..3 {
-                let model_coordinates = Vec4::from((model.vertex(face_idx, j), 1.0));
-
-                let world_coordinates = m_model * model_coordinates;
-
-                let eye_coordinates = &m_view * &world_coordinates;
-
-                assert!(eye_coordinates.z < 0.);
-                assert!(eye_coordinates.w == 1.0);
-
-                let clip_coordinates = &m_projection * &eye_coordinates;
-
-                let clip_coordinates = m_mvp * model_coordinates;
-
-                let normalized_device_coordinates = perspective_divided(clip_coordinates);
-                assert!(normalized_device_coordinates.z >= -1.);
-                assert!(normalized_device_coordinates.z <= 1.);
-
-                screen_coords[j] = (&m_viewport * &normalized_device_coordinates).xyz();
-                world_coords[j] = normalized_device_coordinates.xyz();
-            }
-
-            let mut normals = Vec::new();
-            for i in 0..3 {
-                let normal = model.normal(face_idx, i);
-                let normal = m_mvpit * Vec4::from((normal, 0.));
-                let normal = normal.xyz();
-                normals.push(normal);
-            }
-
-            // let normal = ((world_coords[0] - world_coords[2])
-            //     .cross(world_coords[1] - world_coords[0]))
-            // .normalize();
-
-            // let intensity = normal.dot(light_dir);
-
-            // let gray = (intensity * 255.0).clamp(0.0, 255.0) as u8;
-            // let triangle_color = coloru8(gray, gray, gray);
-            // let triangle_color = WHITE;
-
-            triangle(
-                screen_coords[0],
-                screen_coords[1],
-                screen_coords[2],
-                light_dir,
-                normals[0],
-                normals[1],
-                normals[2],
-                // normal,
-                // normal,
-                // normal,
-                &mut image,
-                &mut depths,
-            );
-
-            if args.wireframe {
-                for i in 0..3 {
-                    linevf32(
-                        screen_coords[i % 3].xy(),
-                        screen_coords[(i + 1) % 3].xy(),
-                        &mut image,
-                        RED,
-                    );
-                }
-            }
-        }
-        let tga = tga::TgaFile::from_image(image);
-        tga.save_to_path(format!("raw-output/frame-{:02}.tga", idx).as_str())?;
-
-        if args.write_depth_buffer {
-            let depth_tga = tga::TgaFile::from_image(depths.to_image());
-            depth_tga.save_to_path(format!("raw-output/depth-{:02}.tga", idx).as_str())?;
-        }
-    }
+    // if args.write_depth_buffer {
+    //     let depth_tga = tga::TgaFile::from_image(depths.to_image());
+    //     depth_tga.save_to_path(format!("raw-output/depth-{:02}.tga", idx).as_str())?;
+    // }
 
     Ok(())
 }
