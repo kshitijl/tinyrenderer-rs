@@ -18,13 +18,15 @@ pub const GOLD: Color = coloru8(0xff, 0xd7, 0x00);
 
 pub struct Image {
     buf: Vec<u8>,
-    width: u16,
-    height: u16,
+    width: usize,
+    height: usize,
 }
 
 impl Image {
     pub fn new(width: u16, height: u16) -> Self {
-        let buf = vec![0u8; width as usize * height as usize * 3];
+        let width = width as usize;
+        let height = height as usize;
+        let buf = vec![255u8; width * height * 4];
         Self { width, height, buf }
     }
 
@@ -44,16 +46,11 @@ impl Image {
 
     #[inline]
     pub fn set(&mut self, x: usize, y: usize, color: Color) {
-        let idx = (y * self.width as usize + x) * 3;
+        let y = self.height - y;
+        let idx = (y * self.width as usize + x) * 4;
         self.buf[idx + 0] = color.x;
         self.buf[idx + 1] = color.y;
         self.buf[idx + 2] = color.z;
-    }
-    #[inline]
-    pub fn get(&self, x: usize, y: usize) -> Color {
-        let idx = (y * self.width as usize + x) * 3;
-
-        Color::new(self.buf[idx + 0], self.buf[idx + 1], self.buf[idx + 2])
     }
 }
 

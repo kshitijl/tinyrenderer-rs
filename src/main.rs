@@ -166,32 +166,12 @@ impl World {
         }
     }
 
-    /// Update the `World` internal state; bounce the box around the screen.
     fn update(&mut self) {
-        // if self.box_x <= 0 || self.box_x + BOX_SIZE > WIDTH as i16 {
-        //     self.velocity_x *= -1;
-        // }
-        // if self.box_y <= 0 || self.box_y + BOX_SIZE > HEIGHT as i16 {
-        //     self.velocity_y *= -1;
-        // }
-
-        // self.box_x += self.velocity_x;
-        // self.box_y += self.velocity_y;
+        // Nothing to do here for now; we don't animate or whatever.
     }
 
-    /// Draw the `World` state to the frame buffer.
-    ///
-    /// Assumes the default texture format: `wgpu::TextureFormat::Rgba8UnormSrgb`
     fn draw(&self, frame: &mut [u8]) {
-        for (i, pixel) in frame.chunks_exact_mut(4).enumerate() {
-            let x = (i % self.width) as usize;
-            let y = (i / self.width) as usize;
-
-            let color = self.image.get(x, self.width - y - 1);
-            let rgba = [color.x, color.y, color.z, 0xff];
-
-            pixel.copy_from_slice(&rgba);
-        }
+        frame.copy_from_slice(self.image.buf().as_slice());
     }
 }
 
