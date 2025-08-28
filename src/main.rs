@@ -51,7 +51,9 @@ fn log_error<E: std::error::Error + 'static>(method_name: &str, err: E) {
 struct World {
     image: Image,
     depths: DepthBuffer,
+    model: wavefront_obj::Model,
     width: usize,
+    wireframe: bool,
 }
 
 impl World {
@@ -66,9 +68,24 @@ impl World {
             model.num_normals()
         );
 
-        let mut image = Image::new(args.canvas_size, args.canvas_size);
-        let mut depths = DepthBuffer::new(args.canvas_size, args.canvas_size);
-        let canvas_size = args.canvas_size as f32;
+        let image = Image::new(args.canvas_size, args.canvas_size);
+        let depths = DepthBuffer::new(args.canvas_size, args.canvas_size);
+
+        Self {
+            image,
+            depths,
+            model,
+            width: args.canvas_size as usize,
+            wireframe: args.wireframe,
+        }
+    }
+
+    fn update(&mut self) {
+        // Nothing to do here for now; we don't animate or whatever.
+    }
+
+    fn render(&mut self) {
+        let canvas_size = self.width as f32;
 
         let angle = 0.;
         let m_rot = Mat4::from_rotation_y(angle);
@@ -91,12 +108,12 @@ impl World {
         let m_viewport = Mat4::from_scale(Vec3::new(canvas_size / 2.0, canvas_size / 2.0, 1.))
             * Mat4::from_translation(Vec3::new(1.0, 1.0, 0.0));
 
-        for face_idx in 0..model.num_faces() {
+        for face_idx in 0..self.model.num_faces() {
             let mut screen_coords: [Vec3; 3] = [Vec3::new(0., 0., 0.); 3];
             let mut world_coords: [Vec3; 3] = [Vec3::new(0.0, 0.0, 0.0); 3];
 
             for j in 0..3 {
-                let model_coordinates = Vec4::from((model.vertex(face_idx, j), 1.0));
+                let model_coordinates = Vec4::from((self.model.vertex(face_idx, j), 1.0));
 
                 let world_coordinates = m_model * model_coordinates;
 
@@ -119,7 +136,7 @@ impl World {
 
             let mut normals = Vec::new();
             for i in 0..3 {
-                let normal = model.normal(face_idx, i);
+                let normal = self.model.normal(face_idx, i);
                 let normal = m_mvpit * Vec4::from((normal, 0.));
                 let normal = normal.xyz();
                 normals.push(normal);
@@ -146,34 +163,25 @@ impl World {
                 // normal,
                 // normal,
                 // normal,
-                &mut image,
-                &mut depths,
+                &mut self.image,
+                &mut self.depths,
             );
 
-            if args.wireframe {
+            if self.wireframe {
                 for i in 0..3 {
                     linevf32(
                         screen_coords[i % 3].xy(),
                         screen_coords[(i + 1) % 3].xy(),
-                        &mut image,
+                        &mut self.image,
                         RED,
                     );
                 }
             }
         }
-
-        Self {
-            image,
-            depths,
-            width: args.canvas_size as usize,
-        }
     }
 
-    fn update(&mut self) {
-        // Nothing to do here for now; we don't animate or whatever.
-    }
-
-    fn draw(&self, frame: &mut [u8]) {
+    fn draw(&mut self, frame: &mut [u8]) {
+        self.render();
         frame.copy_from_slice(self.image.buf().as_slice());
     }
 }
@@ -226,7 +234,7 @@ impl ApplicationHandler for App {
 
         self.pixels = pixels
     }
-    fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
         match event {
             WindowEvent::PinchGesture { .. } => {
                 log::info!("pinch");
