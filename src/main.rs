@@ -93,8 +93,8 @@ impl World {
             width: args.canvas_size as usize,
             wireframe: args.wireframe,
             camera: Camera {
-                pos: vec3(1., 1., 3.),
-                dir: vec3(-1., -1., -3.).normalize(),
+                pos: vec3(1., 0., 3.),
+                dir: vec3(-1., 0., -3.).normalize(),
                 up: vec3(0., 1., 0.).normalize(),
             },
         }
@@ -142,7 +142,7 @@ impl World {
         let m_trans = Mat4::from_translation(Vec3::new(0., 0.0, 0.));
         let m_model = m_trans * m_rot;
 
-        let light_dir = Vec4::new(-1., 0., -1., 0.).normalize();
+        let light_dir = Vec4::new(1., -1., 0., 0.).normalize();
         let m_view = Mat4::look_to_rh(self.camera.pos, self.camera.dir, self.camera.up);
 
         let z_near = 1.;
@@ -150,7 +150,10 @@ impl World {
         let m_projection = Mat4::perspective_rh_gl(f32::to_radians(60.), 1.0, z_near, z_far);
 
         let m_mvp = m_projection * m_view * m_model;
-        let m_mvpit = (m_projection * m_view * m_model).inverse().transpose();
+        let m_mv = m_view * m_model;
+        let m_mvit = m_mv.inverse().transpose();
+        let transformed_light_dir = (m_mv * light_dir).normalize().xyz();
+        log::info!("transformed light dir {}", transformed_light_dir);
 
         let m_viewport = Mat4::from_scale(Vec3::new(canvas_size / 2.0, canvas_size / 2.0, 1.))
             * Mat4::from_translation(Vec3::new(1.0, 1.0, 0.0));
@@ -188,12 +191,10 @@ impl World {
             let mut normals = Vec::new();
             for i in 0..3 {
                 let normal = self.model.normal(face_idx, i);
-                let normal = m_mvpit * Vec4::from((normal, 0.));
+                let normal = m_mvit * Vec4::from((normal, 0.));
                 let normal = normal.xyz();
                 normals.push(normal);
             }
-
-            let transformed_light_dir = (m_mvp * light_dir).xyz();
 
             triangle(
                 screen_coords[0],
@@ -508,7 +509,7 @@ fn triangle(
 
                     let normal = alpha * na + beta * nb + gamma * nc;
                     let normal = normal.normalize();
-                    let intensity = normal.dot(light_dir).clamp(0., 1.);
+                    let intensity = normal.dot(-light_dir).clamp(0., 1.);
                     let intensity = (intensity * 6.).round() / 6.;
                     let color = vec3(255., 155., 0.) * intensity;
                     let color = color.as_u8vec3();
