@@ -286,7 +286,17 @@ impl ApplicationHandler for App {
 
         self.pixels = pixels
     }
-    fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
+
+ fn device_event(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        device_id: DeviceId,
+        event: DeviceEvent,
+    ) {
+        let _ = (event_loop, device_id, event);
+    }
+
+     fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
         match event {
             WindowEvent::PinchGesture { .. } => {
                 // log::info!("pinch");
@@ -297,8 +307,11 @@ impl ApplicationHandler for App {
             WindowEvent::MouseInput { .. } => {
                 // log::info!("mouseinput");
             }
-            WindowEvent::CursorMoved { .. } => {
-                // log::info!("cursormoved");
+            WindowEvent::CursorMoved {
+                device_id: _,
+                position,
+            } => {
+                let (x,y) = position.partial_cmp(other)
             }
             WindowEvent::KeyboardInput {
                 device_id,
