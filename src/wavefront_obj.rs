@@ -1,4 +1,4 @@
-use glam::{Vec3, vec3};
+use glam::{Mat4, Vec3, Vec4, Vec4Swizzles, vec3};
 use nom::{
     IResult, Parser,
     branch::alt,
@@ -25,6 +25,44 @@ pub struct Model {
 }
 
 impl Model {
+    pub fn bounding_box(&self) -> (Vec3, Vec3) {
+        let mut min = self.vertices[0];
+        let mut max = self.vertices[0];
+
+        for vertex in self.vertices.iter() {
+            min.x = f32::min(min.x, vertex.x);
+            min.y = f32::min(min.y, vertex.y);
+            min.z = f32::min(min.z, vertex.z);
+
+            max.x = f32::max(max.x, vertex.x);
+            max.y = f32::max(max.y, vertex.y);
+            max.z = f32::max(max.z, vertex.z);
+        }
+
+        (min, max)
+    }
+
+    pub fn scale(&self) -> f32 {
+        let bb = self.bounding_box();
+
+        let model_scale = f32::max(bb.1.x - bb.0.x, f32::max(bb.1.y - bb.0.y, bb.1.z - bb.0.z));
+        model_scale
+    }
+
+    pub fn normalize(&mut self) {
+        let bb = self.bounding_box();
+
+        let m_trans = Mat4::from_translation(-(bb.1 + bb.0) / 2.);
+        let scale = self.scale();
+        let s = 2. / scale;
+        let m_scale = Mat4::from_scale(vec3(s, s, s));
+
+        let m_transform = m_scale * m_trans;
+
+        for vertex in self.vertices.iter_mut() {
+            *vertex = (m_transform * Vec4::from((*vertex, 1.0))).xyz();
+        }
+    }
     pub fn num_faces(&self) -> usize {
         self.faces.len()
     }

@@ -5,7 +5,7 @@ use crate::image::*;
 
 use clap::Parser;
 use error_iter::ErrorIter as _;
-use glam::{Mat3, Mat4, Vec2, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec3, vec4};
+use glam::{Mat3, Mat4, Vec2, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec3};
 use log;
 use pixels::{Pixels, SurfaceTexture};
 use std::collections::HashMap;
@@ -44,6 +44,7 @@ struct World {
     model: wavefront_obj::Model,
     width: usize,
     wireframe: bool,
+    no_triangles: bool,
     camera: Camera,
     keys: HashMap<KeyCode, bool>,
 
@@ -53,13 +54,24 @@ struct World {
 impl World {
     /// Create a new `World` instance that can draw a moving box.
     fn new(args: &Args) -> Self {
-        let model = wavefront_obj::Model::from_file(args.model.as_str()).unwrap();
+        let mut model = wavefront_obj::Model::from_file(args.model.as_str()).unwrap();
 
+        let bb = model.bounding_box();
         log::info!(
-            "Parsed {} vertices, {} faces, {} normals",
+            "Parsed {} vertices, {} faces, {} normals. Bounding box: {:?}. Scale: {}",
             model.num_vertices(),
             model.num_faces(),
-            model.num_normals()
+            model.num_normals(),
+            bb,
+            model.scale()
+        );
+
+        model.normalize();
+
+        log::info!(
+            "After normalization, bounding box is {:?} and scale is {}",
+            model.bounding_box(),
+            model.scale()
         );
 
         let image = Image::new(args.canvas_size, args.canvas_size);
@@ -71,9 +83,10 @@ impl World {
             model,
             width: args.canvas_size as usize,
             wireframe: args.wireframe,
+            no_triangles: args.no_triangles,
             camera: Camera {
-                pos: vec3(1., 0., 3.),
-                dir: vec3(-1., 0., -3.).normalize(),
+                pos: vec3(0., 0., 3.),
+                dir: vec3(0., 0., -3.).normalize(),
                 up: vec3(0., 1., 0.).normalize(),
             },
             keys: HashMap::new(),
@@ -114,26 +127,32 @@ impl World {
     fn update(&mut self, _since_last_frame: Duration, since_start: Duration) {
         if self.keys.get(&KeyCode::KeyW) == Some(&true) {
             self.move_(Direction::Forward);
-        } else if self.keys.get(&KeyCode::KeyS) == Some(&true) {
+        }
+
+        if self.keys.get(&KeyCode::KeyS) == Some(&true) {
             self.move_(Direction::Back);
-        } else if self.keys.get(&KeyCode::KeyA) == Some(&true) {
+        }
+
+        if self.keys.get(&KeyCode::KeyA) == Some(&true) {
             self.move_(Direction::Left);
-        } else if self.keys.get(&KeyCode::KeyD) == Some(&true) {
+        }
+
+        if self.keys.get(&KeyCode::KeyD) == Some(&true) {
             self.move_(Direction::Right);
         }
 
-        self.light_pos.x = since_start.as_secs_f32().sin();
+        self.light_pos.x = 2. * since_start.as_secs_f32().sin();
     }
 
     fn render(&mut self) {
         let canvas_size = self.width as f32;
 
         let angle = 0.;
-        let model_pos = vec4(0., 0., 0., 1.);
+        let model_pos = vec3(0., 0., 0.);
 
         let m_rot = Mat4::from_rotation_y(angle);
         let m_trans = Mat4::from_translation(model_pos.xyz());
-        let m_model = m_trans * m_rot;
+        let m_model = m_rot * m_trans;
 
         let m_view = Mat4::look_to_rh(self.camera.pos, self.camera.dir, self.camera.up);
 
@@ -143,8 +162,8 @@ impl World {
 
         let m_mvp = m_projection * m_view * m_model;
 
-        let m_mv = m_view * m_model;
-        let m_mvit = m_mv.inverse().transpose();
+        let m_light_to_world = Mat4::IDENTITY;
+        let m_normal = m_model.inverse().transpose();
 
         let m_viewport = Mat4::from_scale(Vec3::new(canvas_size / 2.0, canvas_size / 2.0, 1.))
             * Mat4::from_translation(Vec3::new(1.0, 1.0, 0.0));
@@ -176,32 +195,35 @@ impl World {
                 world_coords[j] = normalized_device_coordinates.xyz();
             }
 
-            // We're going to do lighting by dot-producting the light direction
-            // and normals, so it's really THOSE two that need to be transformed
-            // with respect to each other. It's also very important that we
-            // not normalize or xyz the normals and lighting vectors! Those are
-            // non-linear transforms and break the proof that transforming by
-            // the transpose of the inverse preserves dot products.
-            let mut normals = Vec::new();
-            for i in 0..3 {
-                let normal = self.model.normal(face_idx, i);
-                let normal = m_mvit * Vec4::from((normal, 0.));
-                normals.push(normal);
-            }
-            let light_dir = (model_pos - Vec4::from((self.light_pos, 0.))).normalize();
-            let transformed_light_dir = m_mv * light_dir;
+            if !self.no_triangles {
+                // We're going to do lighting by dot-producting the light direction
+                // and normals, so it's really THOSE two that need to be transformed
+                // with respect to each other. It's also very important that we
+                // not normalize or xyz the normals and lighting vectors! Those are
+                // non-linear transforms and break the proof that transforming by
+                // the transpose of the inverse preserves dot products.
+                let mut normals = Vec::new();
+                for i in 0..3 {
+                    let normal = self.model.normal(face_idx, i);
+                    let normal = m_normal * Vec4::from((normal, 0.));
+                    normals.push(normal);
+                }
+                let light_dir =
+                    (Vec4::from((model_pos, 1.0)) - Vec4::from((self.light_pos, 1.))).normalize();
+                let transformed_light_dir = m_light_to_world * light_dir;
 
-            triangle(
-                screen_coords[0],
-                screen_coords[1],
-                screen_coords[2],
-                transformed_light_dir,
-                normals[0],
-                normals[1],
-                normals[2],
-                &mut self.image,
-                &mut self.depths,
-            );
+                triangle(
+                    screen_coords[0],
+                    screen_coords[1],
+                    screen_coords[2],
+                    transformed_light_dir,
+                    normals[0],
+                    normals[1],
+                    normals[2],
+                    &mut self.image,
+                    &mut self.depths,
+                );
+            }
 
             if self.wireframe {
                 for i in 0..3 {
@@ -549,6 +571,10 @@ struct Args {
     /// Draw red wireframe lines
     #[arg(short, long)]
     wireframe: bool,
+
+    /// Don't draw triangles
+    #[arg(short, long)]
+    no_triangles: bool,
 
     #[arg(long)]
     write_depth_buffer: bool,
