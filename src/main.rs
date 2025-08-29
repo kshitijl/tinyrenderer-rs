@@ -1,29 +1,4 @@
-/*
-clip coordinates: output of vertex shader, after it has transformed with projection matrix, but BEFORE the GPU does the perspective divide and clipping against the view frustum
-
-overall pipeline:
-1. model space. coordinates of vertices as stored in mesh
-2. world space. after applying the model matrix (placing the object in the scene)
-3. view/eye space. after applying the view matrix (putting everything in the camera's coordinate system)
-4. clip space (clip coordinates). after applying the projection matrix (perspective or orthographic). at this stage each vertex is 4d (x,y,z,w).
-5. Normalized Device Coordinates (NDC). Divide by w. (x/w, y/w, z/w). Now everything is in the cube [-1,1]^3.
-6. window/screen coordinates. After the viewport transform, mapping NDC to pixel positions.
-7. NOW rasterizaton happens. Each fragment has interpolated attributes, including depth.
-
-OpenGL convention is a right handed system where the camera looks down the negative Z axis. X axis points right, Y axis points up, Z axis points towards the camera (positive Z values are behind the camera).
-
-In this convention, you typically specify the camera looking towards negative Z, and object you want to see should have negative Z coordinates relative to the camera.
-
-Objects with greater negative Z (i.e., smaller Z) are farther away from the camera.
-
-See https://www.songho.ca/opengl/gl_projectionmatrix.html for a derivation of the perspective projection matrix entries.
-
-In NDC, after perspective divide, we want for the near plane that z_ndc = -1, and for the far plane z_ndc = +1. But note that the near and far planes are at z = -z_near and z = -z_far. z_near and z_far are positive numbers. But we are facing the negative z direction, so the actual planes are at negative z coordinates.
-
-Also, for the depth test, OpenGL remaps [-1,1] -> [0,1]: z_depth = z_ndc/2 + 1/2. The near plane is z = 0.0, far plane is z = 1.0.
-*/
 mod image;
-mod tga;
 mod wavefront_obj;
 
 use crate::image::*;
@@ -136,7 +111,7 @@ impl World {
 
         log::info!("now at {}", self.camera.pos);
     }
-    fn update(&mut self, since_last_frame: Duration, since_start: Duration) {
+    fn update(&mut self, _since_last_frame: Duration, since_start: Duration) {
         if self.keys.get(&KeyCode::KeyW) == Some(&true) {
             self.move_(Direction::Forward);
         } else if self.keys.get(&KeyCode::KeyS) == Some(&true) {
@@ -188,7 +163,7 @@ impl World {
                 // assert!(eye_coordinates.z < 0.);
                 // assert!(eye_coordinates.w == 1.0);
 
-                let clip_coordinates = &m_projection * &eye_coordinates;
+                let _clip_coordinates = &m_projection * &eye_coordinates;
 
                 let clip_coordinates = m_mvp * model_coordinates;
 
@@ -214,7 +189,6 @@ impl World {
                 normals.push(normal);
             }
             let light_dir = (model_pos - Vec4::from((self.light_pos, 0.))).normalize();
-
             let transformed_light_dir = m_mv * light_dir;
 
             triangle(
@@ -332,27 +306,11 @@ impl ApplicationHandler for App {
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
         match event {
-            WindowEvent::PinchGesture { .. } => {
-                // log::info!("pinch");
-            }
-            WindowEvent::MouseWheel { .. } => {
-                // log::info!("mousewheel");
-            }
-            WindowEvent::MouseInput { .. } => {
-                // log::info!("mouseinput");
-            }
-            WindowEvent::CursorMoved {
-                device_id: _,
-                position,
-            } => {
-                // let (x,y) = position.partial_cmp(other)
-            }
             WindowEvent::KeyboardInput {
                 device_id: _,
                 event,
                 is_synthetic: _,
             } => {
-                // log::info!("keyboard {:?} {:?} {}", device_id, event, is_synthetic);
                 if event.state == ElementState::Pressed {
                     if event.physical_key == PhysicalKey::Code(KeyCode::Escape) {
                         log::info!("bye");

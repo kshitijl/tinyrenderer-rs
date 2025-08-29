@@ -6,15 +6,7 @@ pub const fn coloru8(r: u8, g: u8, b: u8) -> Color {
     U8Vec3::new(r, g, b)
 }
 
-pub const WHITE: Color = coloru8(255, 255, 255);
 pub const RED: Color = coloru8(255, 0, 0);
-pub const GREEN: Color = coloru8(0, 255, 0);
-pub const YELLOW: Color = coloru8(255, 255, 0);
-pub const BLUE: Color = coloru8(0, 0, 255);
-pub const BLACK: Color = coloru8(0, 0, 0);
-pub const ORANGE: Color = coloru8(0xff, 0x45, 0x00);
-pub const PINK: Color = coloru8(0xff, 0xc0, 0xcb);
-pub const GOLD: Color = coloru8(0xff, 0xd7, 0x00);
 
 pub struct Image {
     buf: Vec<u8>,
