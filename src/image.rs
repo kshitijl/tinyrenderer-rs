@@ -44,9 +44,13 @@ impl Image {
         &self.buf
     }
 
+    pub fn buf_mut(&mut self) -> &mut Vec<u8> {
+        &mut self.buf
+    }
+
     #[inline]
     pub fn set(&mut self, x: usize, y: usize, color: Color) {
-        let y = self.height - y;
+        let y = self.height - y - 1;
         let idx = (y * self.width as usize + x) * 4;
         self.buf[idx + 0] = color.x;
         self.buf[idx + 1] = color.y;
@@ -98,6 +102,10 @@ impl DepthBuffer {
         image
     }
 
+    pub fn buf_mut(&mut self) -> &mut Vec<f32> {
+        &mut self.buf
+    }
+
     #[inline]
     pub fn width(&self) -> usize {
         self.width as _
@@ -107,10 +115,6 @@ impl DepthBuffer {
     pub fn height(&self) -> usize {
         self.height as _
     }
-
-    // pub fn buf(&self) -> &Vec<f32> {
-    //     &self.buf
-    // }
 
     #[inline]
     pub fn set(&mut self, x: usize, y: usize, val: f32) {

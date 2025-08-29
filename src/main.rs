@@ -28,7 +28,7 @@ mod wavefront_obj;
 
 use crate::image::*;
 use clap::Parser;
-use glam::{Mat4, Vec2, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec3};
+use glam::{Mat3, Mat4, Vec2, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec3};
 use std::f32;
 
 use error_iter::ErrorIter as _;
@@ -48,12 +48,25 @@ fn log_error<E: std::error::Error + 'static>(method_name: &str, err: E) {
     }
 }
 
+struct Camera {
+    pos: Vec3,
+    dir: Vec3,
+}
+
+enum Direction {
+    Forward,
+    Back,
+    Right,
+    Left,
+}
+
 struct World {
     image: Image,
     depths: DepthBuffer,
     model: wavefront_obj::Model,
     width: usize,
     wireframe: bool,
+    camera: Camera,
 }
 
 impl World {
@@ -77,14 +90,39 @@ impl World {
             model,
             width: args.canvas_size as usize,
             wireframe: args.wireframe,
+            camera: Camera {
+                pos: vec3(1., 1., 3.),
+                dir: vec3(-1., -1., -3.).normalize(),
+            },
         }
     }
 
+    fn camera(&mut self, dir: Direction) {
+        let speed = 0.01;
+        let angular_speed = 1.0f32.to_radians();
+        match dir {
+            Direction::Forward => {
+                self.camera.pos += self.camera.dir * speed;
+            }
+            Direction::Back => {
+                self.camera.pos -= self.camera.dir * speed;
+            }
+            Direction::Right => {
+                let m = Mat3::from_rotation_y(-angular_speed);
+                self.camera.dir = m * self.camera.dir;
+            }
+            Direction::Left => {
+                let m = Mat3::from_rotation_y(angular_speed);
+                self.camera.dir = m * self.camera.dir;
+            }
+        }
+    }
     fn update(&mut self) {
         // Nothing to do here for now; we don't animate or whatever.
     }
 
     fn render(&mut self) {
+        log::info!("time to render!");
         let canvas_size = self.width as f32;
 
         let angle = 0.;
@@ -93,8 +131,8 @@ impl World {
         let m_model = m_trans * m_rot;
 
         let light_dir = Vec3::new(-1., 0., -1.).normalize();
-        let eye = vec3(1., 1., 3.0);
-        let center = vec3(0., 0., 0.);
+        let eye = self.camera.pos;
+        let center = eye + self.camera.dir;
         let up = vec3(0., 1., 0.);
         let m_view = Mat4::look_at_rh(eye, center, up);
 
@@ -119,16 +157,17 @@ impl World {
 
                 let eye_coordinates = &m_view * &world_coordinates;
 
-                assert!(eye_coordinates.z < 0.);
-                assert!(eye_coordinates.w == 1.0);
+                // assert!(eye_coordinates.z < 0.);
+                // assert!(eye_coordinates.w == 1.0);
 
                 let clip_coordinates = &m_projection * &eye_coordinates;
 
                 let clip_coordinates = m_mvp * model_coordinates;
 
                 let normalized_device_coordinates = perspective_divided(clip_coordinates);
-                assert!(normalized_device_coordinates.z >= -1.);
-                assert!(normalized_device_coordinates.z <= 1.);
+                // TODO maybe skip drawing these
+                // assert!(normalized_device_coordinates.z >= -1.);
+                // assert!(normalized_device_coordinates.z <= 1.);
 
                 screen_coords[j] = (&m_viewport * &normalized_device_coordinates).xyz();
                 world_coords[j] = normalized_device_coordinates.xyz();
@@ -180,7 +219,21 @@ impl World {
         }
     }
 
+    fn clear(&mut self) {
+        let data = self.image.buf_mut();
+        let u32_slice = unsafe {
+            std::slice::from_raw_parts_mut(data.as_mut_ptr() as *mut u32, data.len() / 4)
+        };
+
+        let pattern = 0xaaaaaaffu32;
+        u32_slice.fill(pattern);
+
+        let depth_data = self.depths.buf_mut();
+        depth_data.as_mut_slice().fill(f32::MAX);
+    }
+
     fn draw(&mut self, frame: &mut [u8]) {
+        self.clear();
         self.render();
         frame.copy_from_slice(self.image.buf().as_slice());
     }
@@ -258,6 +311,14 @@ impl ApplicationHandler for App {
                     if event.physical_key == PhysicalKey::Code(KeyCode::Escape) {
                         log::info!("bye");
                         event_loop.exit();
+                    } else if event.physical_key == PhysicalKey::Code(KeyCode::KeyW) {
+                        self.world.camera(Direction::Forward);
+                    } else if event.physical_key == PhysicalKey::Code(KeyCode::KeyS) {
+                        self.world.camera(Direction::Back);
+                    } else if event.physical_key == PhysicalKey::Code(KeyCode::KeyD) {
+                        self.world.camera(Direction::Right);
+                    } else if event.physical_key == PhysicalKey::Code(KeyCode::KeyA) {
+                        self.world.camera(Direction::Left);
                     }
                 }
             }
@@ -400,8 +461,8 @@ fn triangle(
 
             let z = alpha * a.z + beta * b.z + gamma * c.z;
             let z = z / 2. + 0.5;
-            assert!(z >= 0.);
-            assert!(z <= 1.);
+            // assert!(z >= 0.);
+            // assert!(z <= 1.);
 
             if x >= 0 && x < image.width() as i32 && y >= 0 && y < image.height() as i32 {
                 let x = x as usize;
