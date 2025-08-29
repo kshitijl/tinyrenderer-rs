@@ -27,15 +27,16 @@ mod tga;
 mod wavefront_obj;
 
 use crate::image::*;
-use clap::Parser;
-use glam::{Mat3, Mat4, Vec2, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec3};
-use std::f32;
 
+use clap::Parser;
 use error_iter::ErrorIter as _;
+use glam::{Mat3, Mat4, Vec2, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec3};
 use log;
 use pixels::{Pixels, SurfaceTexture};
+use std::collections::HashMap;
+use std::f32;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use winit::application::ApplicationHandler;
 use winit::event::{DeviceEvent, DeviceId, ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
@@ -69,6 +70,8 @@ struct World {
     width: usize,
     wireframe: bool,
     camera: Camera,
+
+    keys: HashMap<KeyCode, bool>,
 }
 
 impl World {
@@ -97,6 +100,7 @@ impl World {
                 dir: vec3(-1., 0., -3.).normalize(),
                 up: vec3(0., 1., 0.).normalize(),
             },
+            keys: HashMap::new(),
         }
     }
 
@@ -131,7 +135,15 @@ impl World {
         log::info!("now at {}", self.camera.pos);
     }
     fn update(&mut self) {
-        // Nothing to do here for now; we don't animate or whatever.
+        if self.keys.get(&KeyCode::KeyW) == Some(&true) {
+            self.move_(Direction::Forward);
+        } else if self.keys.get(&KeyCode::KeyS) == Some(&true) {
+            self.move_(Direction::Back);
+        } else if self.keys.get(&KeyCode::KeyA) == Some(&true) {
+            self.move_(Direction::Left);
+        } else if self.keys.get(&KeyCode::KeyD) == Some(&true) {
+            self.move_(Direction::Right);
+        }
     }
 
     fn render(&mut self) {
@@ -150,9 +162,10 @@ impl World {
         let m_projection = Mat4::perspective_rh_gl(f32::to_radians(60.), 1.0, z_near, z_far);
 
         let m_mvp = m_projection * m_view * m_model;
-        let m_mv = m_view * m_model;
+
+        let m_mv = m_projection * m_view * m_model;
         let m_mvit = m_mv.inverse().transpose();
-        let transformed_light_dir = (m_mv * light_dir).normalize().xyz();
+        let transformed_light_dir = m_mv * light_dir;
         log::info!("transformed light dir {}", transformed_light_dir);
 
         let m_viewport = Mat4::from_scale(Vec3::new(canvas_size / 2.0, canvas_size / 2.0, 1.))
@@ -187,12 +200,14 @@ impl World {
 
             // We're going to do lighting by dot-producting the light direction
             // and normals, so it's really THOSE two that need to be transformed
-            // with respect to each other.
+            // with respect to each other. It's also very important that we
+            // not normalize or xyz the normals and lighting vectors! Those are
+            // non-linear transforms and break the proof that transforming by
+            // the transpose of the inverse preserves dot products.
             let mut normals = Vec::new();
             for i in 0..3 {
                 let normal = self.model.normal(face_idx, i);
                 let normal = m_mvit * Vec4::from((normal, 0.));
-                let normal = normal.xyz();
                 normals.push(normal);
             }
 
@@ -204,9 +219,6 @@ impl World {
                 normals[0],
                 normals[1],
                 normals[2],
-                // normal,
-                // normal,
-                // normal,
                 &mut self.image,
                 &mut self.depths,
             );
@@ -330,23 +342,21 @@ impl ApplicationHandler for App {
                 // let (x,y) = position.partial_cmp(other)
             }
             WindowEvent::KeyboardInput {
-                device_id,
+                device_id: _,
                 event,
-                is_synthetic,
+                is_synthetic: _,
             } => {
                 // log::info!("keyboard {:?} {:?} {}", device_id, event, is_synthetic);
                 if event.state == ElementState::Pressed {
                     if event.physical_key == PhysicalKey::Code(KeyCode::Escape) {
                         log::info!("bye");
                         event_loop.exit();
-                    } else if event.physical_key == PhysicalKey::Code(KeyCode::KeyW) {
-                        self.world.move_(Direction::Forward);
-                    } else if event.physical_key == PhysicalKey::Code(KeyCode::KeyS) {
-                        self.world.move_(Direction::Back);
-                    } else if event.physical_key == PhysicalKey::Code(KeyCode::KeyD) {
-                        self.world.move_(Direction::Right);
-                    } else if event.physical_key == PhysicalKey::Code(KeyCode::KeyA) {
-                        self.world.move_(Direction::Left);
+                    } else if let PhysicalKey::Code(key) = event.physical_key {
+                        self.world.keys.insert(key, true);
+                    }
+                } else if event.state == ElementState::Released {
+                    if let PhysicalKey::Code(key) = event.physical_key {
+                        self.world.keys.insert(key, false);
                     }
                 }
             }
@@ -463,10 +473,10 @@ fn triangle(
     a: Vec3,
     b: Vec3,
     c: Vec3,
-    light_dir: Vec3,
-    na: Vec3,
-    nb: Vec3,
-    nc: Vec3,
+    light_dir: Vec4,
+    na: Vec4,
+    nb: Vec4,
+    nc: Vec4,
     image: &mut Image,
     depths: &mut DepthBuffer,
 ) {
@@ -508,7 +518,7 @@ fn triangle(
                     depths.set(x, y, z);
 
                     let normal = alpha * na + beta * nb + gamma * nc;
-                    let normal = normal.normalize();
+                    // let normal = normal.normalize();
                     let intensity = normal.dot(-light_dir).clamp(0., 1.);
                     let intensity = (intensity * 6.).round() / 6.;
                     let color = vec3(255., 155., 0.) * intensity;
