@@ -52,6 +52,7 @@ fn log_error<E: std::error::Error + 'static>(method_name: &str, err: E) {
 struct Camera {
     pos: Vec3,
     dir: Vec3,
+    up: Vec3,
 }
 
 enum Direction {
@@ -94,6 +95,7 @@ impl World {
             camera: Camera {
                 pos: vec3(1., 1., 3.),
                 dir: vec3(-1., -1., -3.).normalize(),
+                up: vec3(0., 1., 0.).normalize(),
             },
         }
     }
@@ -133,8 +135,7 @@ impl World {
         let light_dir = Vec3::new(-1., 0., -1.).normalize();
         let eye = self.camera.pos;
         let center = eye + self.camera.dir;
-        let up = vec3(0., 1., 0.);
-        let m_view = Mat4::look_at_rh(eye, center, up);
+        let m_view = Mat4::look_at_rh(eye, center, self.camera.up);
 
         let z_near = 1.;
         let z_far = 10.;
@@ -180,16 +181,6 @@ impl World {
                 let normal = normal.xyz();
                 normals.push(normal);
             }
-
-            // let normal = ((world_coords[0] - world_coords[2])
-            //     .cross(world_coords[1] - world_coords[0]))
-            // .normalize();
-
-            // let intensity = normal.dot(light_dir);
-
-            // let gray = (intensity * 255.0).clamp(0.0, 255.0) as u8;
-            // let triangle_color = coloru8(gray, gray, gray);
-            // let triangle_color = WHITE;
 
             triangle(
                 screen_coords[0],
