@@ -35,6 +35,7 @@ use error_iter::ErrorIter as _;
 use log;
 use pixels::{Pixels, SurfaceTexture};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
@@ -122,7 +123,6 @@ impl World {
     }
 
     fn render(&mut self) {
-        log::info!("time to render!");
         let canvas_size = self.width as f32;
 
         let angle = 0.;
@@ -243,14 +243,22 @@ struct App {
     window: Option<Arc<Window>>,
     pixels: Option<Pixels<'static>>,
     world: World,
+    started: Instant,
+    last_frame: Instant,
+    total_frames: u64,
 }
 
 impl App {
     fn new(world: World) -> Self {
+        let started = Instant::now();
+        let last_frame = started.clone();
         Self {
             window: None,
             pixels: None,
             world,
+            started,
+            last_frame,
+            total_frames: 0,
         }
     }
 }
@@ -290,23 +298,23 @@ impl ApplicationHandler for App {
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
         match event {
             WindowEvent::PinchGesture { .. } => {
-                log::info!("pinch");
+                // log::info!("pinch");
             }
             WindowEvent::MouseWheel { .. } => {
-                log::info!("mousewheel");
+                // log::info!("mousewheel");
             }
             WindowEvent::MouseInput { .. } => {
-                log::info!("mouseinput");
+                // log::info!("mouseinput");
             }
             WindowEvent::CursorMoved { .. } => {
-                log::info!("cursormoved");
+                // log::info!("cursormoved");
             }
             WindowEvent::KeyboardInput {
                 device_id,
                 event,
                 is_synthetic,
             } => {
-                log::info!("keyboard {:?} {:?} {}", device_id, event, is_synthetic);
+                // log::info!("keyboard {:?} {:?} {}", device_id, event, is_synthetic);
                 if event.state == ElementState::Pressed {
                     if event.physical_key == PhysicalKey::Code(KeyCode::Escape) {
                         log::info!("bye");
@@ -357,6 +365,13 @@ impl ApplicationHandler for App {
 
                 // Draw the current frame
                 self.world.draw(self.pixels.as_mut().unwrap().frame_mut());
+
+                let average_fps =
+                    self.total_frames as f64 / (self.last_frame - self.started).as_secs_f64();
+                let this_frame_fps = 1.0f64 / (self.last_frame.elapsed().as_secs_f64());
+                log::info!("average fps {}, this frame {}", average_fps, this_frame_fps);
+                self.total_frames += 1;
+                self.last_frame = Instant::now();
                 if let Err(err) = self.pixels.as_ref().unwrap().render() {
                     log_error("pixels.render", err);
                     event_loop.exit();
