@@ -543,7 +543,7 @@ struct Args {
     model: String,
 
     /// Output image size in pixels. We only do square images for now.
-    #[arg(short, long, default_value_t = 800)]
+    #[arg(short, long, default_value_t = 320)]
     canvas_size: u16,
 
     /// Draw red wireframe lines
