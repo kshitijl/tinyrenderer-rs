@@ -142,7 +142,7 @@ impl World {
         let m_trans = Mat4::from_translation(Vec3::new(0., 0.0, 0.));
         let m_model = m_trans * m_rot;
 
-        let light_dir = Vec3::new(-1., 0., -1.).normalize();
+        let light_dir = Vec4::new(-1., 0., -1., 0.).normalize();
         let m_view = Mat4::look_to_rh(self.camera.pos, self.camera.dir, self.camera.up);
 
         let z_near = 1.;
@@ -182,6 +182,9 @@ impl World {
                 world_coords[j] = normalized_device_coordinates.xyz();
             }
 
+            // We're going to do lighting by dot-producting the light direction
+            // and normals, so it's really THOSE two that need to be transformed
+            // with respect to each other.
             let mut normals = Vec::new();
             for i in 0..3 {
                 let normal = self.model.normal(face_idx, i);
@@ -190,11 +193,13 @@ impl World {
                 normals.push(normal);
             }
 
+            let transformed_light_dir = (m_mvp * light_dir).xyz();
+
             triangle(
                 screen_coords[0],
                 screen_coords[1],
                 screen_coords[2],
-                light_dir,
+                transformed_light_dir,
                 normals[0],
                 normals[1],
                 normals[2],
