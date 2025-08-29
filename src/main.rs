@@ -37,7 +37,7 @@ use pixels::{Pixels, SurfaceTexture};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use winit::application::ApplicationHandler;
-use winit::event::{ElementState, WindowEvent};
+use winit::event::{DeviceEvent, DeviceId, ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Window, WindowId};
@@ -100,25 +100,35 @@ impl World {
         }
     }
 
-    fn camera(&mut self, dir: Direction) {
-        let speed = 0.01;
-        let angular_speed = 1.0f32.to_radians();
+    fn camera_mouse(&mut self, dx: f64, dy: f64) {
+        let m = Mat3::from_rotation_y((-dx / 10.).to_radians() as f32);
+        self.camera.dir = m * self.camera.dir;
+
+        let m = Mat3::from_rotation_x((-dy / 10.).to_radians() as f32);
+        self.camera.dir = m * self.camera.dir;
+    }
+
+    fn move_(&mut self, dir: Direction) {
+        let speed = 0.1;
+        let forward = self.camera.dir.with_y(0.);
+        let right = forward.cross(self.camera.up);
+
         match dir {
             Direction::Forward => {
-                self.camera.pos += self.camera.dir * speed;
+                self.camera.pos += forward * speed;
             }
             Direction::Back => {
-                self.camera.pos -= self.camera.dir * speed;
+                self.camera.pos -= forward * speed;
             }
             Direction::Right => {
-                let m = Mat3::from_rotation_y(-angular_speed);
-                self.camera.dir = m * self.camera.dir;
+                self.camera.pos += right * speed;
             }
             Direction::Left => {
-                let m = Mat3::from_rotation_y(angular_speed);
-                self.camera.dir = m * self.camera.dir;
+                self.camera.pos -= right * speed;
             }
         }
+
+        log::info!("now at {}", self.camera.pos);
     }
     fn update(&mut self) {
         // Nothing to do here for now; we don't animate or whatever.
@@ -133,9 +143,7 @@ impl World {
         let m_model = m_trans * m_rot;
 
         let light_dir = Vec3::new(-1., 0., -1.).normalize();
-        let eye = self.camera.pos;
-        let center = eye + self.camera.dir;
-        let m_view = Mat4::look_at_rh(eye, center, self.camera.up);
+        let m_view = Mat4::look_to_rh(self.camera.pos, self.camera.dir, self.camera.up);
 
         let z_near = 1.;
         let z_far = 10.;
@@ -287,16 +295,18 @@ impl ApplicationHandler for App {
         self.pixels = pixels
     }
 
- fn device_event(
-        &mut self,
-        event_loop: &ActiveEventLoop,
-        device_id: DeviceId,
-        event: DeviceEvent,
-    ) {
-        let _ = (event_loop, device_id, event);
+    fn device_event(&mut self, _: &ActiveEventLoop, _: DeviceId, event: DeviceEvent) {
+        match event {
+            DeviceEvent::MouseMotion { delta } => {
+                let (x, y) = delta;
+                self.world.camera_mouse(x, y);
+            }
+
+            _ => {}
+        }
     }
 
-     fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
         match event {
             WindowEvent::PinchGesture { .. } => {
                 // log::info!("pinch");
@@ -311,7 +321,7 @@ impl ApplicationHandler for App {
                 device_id: _,
                 position,
             } => {
-                let (x,y) = position.partial_cmp(other)
+                // let (x,y) = position.partial_cmp(other)
             }
             WindowEvent::KeyboardInput {
                 device_id,
@@ -324,13 +334,13 @@ impl ApplicationHandler for App {
                         log::info!("bye");
                         event_loop.exit();
                     } else if event.physical_key == PhysicalKey::Code(KeyCode::KeyW) {
-                        self.world.camera(Direction::Forward);
+                        self.world.move_(Direction::Forward);
                     } else if event.physical_key == PhysicalKey::Code(KeyCode::KeyS) {
-                        self.world.camera(Direction::Back);
+                        self.world.move_(Direction::Back);
                     } else if event.physical_key == PhysicalKey::Code(KeyCode::KeyD) {
-                        self.world.camera(Direction::Right);
+                        self.world.move_(Direction::Right);
                     } else if event.physical_key == PhysicalKey::Code(KeyCode::KeyA) {
-                        self.world.camera(Direction::Left);
+                        self.world.move_(Direction::Left);
                     }
                 }
             }
@@ -373,7 +383,9 @@ impl ApplicationHandler for App {
                 let average_fps =
                     self.total_frames as f64 / (self.last_frame - self.started).as_secs_f64();
                 let this_frame_fps = 1.0f64 / (self.last_frame.elapsed().as_secs_f64());
-                log::info!("average fps {}, this frame {}", average_fps, this_frame_fps);
+                if self.total_frames % 60 == 0 {
+                    log::info!("average fps {}, this frame {}", average_fps, this_frame_fps);
+                }
                 self.total_frames += 1;
                 self.last_frame = Instant::now();
                 if let Err(err) = self.pixels.as_ref().unwrap().render() {
