@@ -30,13 +30,13 @@ use crate::image::*;
 
 use clap::Parser;
 use error_iter::ErrorIter as _;
-use glam::{Mat3, Mat4, Vec2, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec3};
+use glam::{Mat3, Mat4, Vec2, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec3, vec4};
 use log;
 use pixels::{Pixels, SurfaceTexture};
 use std::collections::HashMap;
 use std::f32;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use winit::application::ApplicationHandler;
 use winit::event::{DeviceEvent, DeviceId, ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
@@ -70,8 +70,9 @@ struct World {
     width: usize,
     wireframe: bool,
     camera: Camera,
-
     keys: HashMap<KeyCode, bool>,
+
+    light_pos: Vec3,
 }
 
 impl World {
@@ -101,6 +102,7 @@ impl World {
                 up: vec3(0., 1., 0.).normalize(),
             },
             keys: HashMap::new(),
+            light_pos: vec3(-1., 1., 0.),
         }
     }
 
@@ -134,7 +136,7 @@ impl World {
 
         log::info!("now at {}", self.camera.pos);
     }
-    fn update(&mut self) {
+    fn update(&mut self, since_last_frame: Duration, since_start: Duration) {
         if self.keys.get(&KeyCode::KeyW) == Some(&true) {
             self.move_(Direction::Forward);
         } else if self.keys.get(&KeyCode::KeyS) == Some(&true) {
@@ -144,17 +146,20 @@ impl World {
         } else if self.keys.get(&KeyCode::KeyD) == Some(&true) {
             self.move_(Direction::Right);
         }
+
+        self.light_pos.x = since_start.as_secs_f32().sin();
     }
 
     fn render(&mut self) {
         let canvas_size = self.width as f32;
 
         let angle = 0.;
+        let model_pos = vec4(0., 0., 0., 1.);
+
         let m_rot = Mat4::from_rotation_y(angle);
-        let m_trans = Mat4::from_translation(Vec3::new(0., 0.0, 0.));
+        let m_trans = Mat4::from_translation(model_pos.xyz());
         let m_model = m_trans * m_rot;
 
-        let light_dir = Vec4::new(1., -1., 0., 0.).normalize();
         let m_view = Mat4::look_to_rh(self.camera.pos, self.camera.dir, self.camera.up);
 
         let z_near = 1.;
@@ -163,10 +168,8 @@ impl World {
 
         let m_mvp = m_projection * m_view * m_model;
 
-        let m_mv = m_projection * m_view * m_model;
+        let m_mv = m_view * m_model;
         let m_mvit = m_mv.inverse().transpose();
-        let transformed_light_dir = m_mv * light_dir;
-        log::info!("transformed light dir {}", transformed_light_dir);
 
         let m_viewport = Mat4::from_scale(Vec3::new(canvas_size / 2.0, canvas_size / 2.0, 1.))
             * Mat4::from_translation(Vec3::new(1.0, 1.0, 0.0));
@@ -210,6 +213,9 @@ impl World {
                 let normal = m_mvit * Vec4::from((normal, 0.));
                 normals.push(normal);
             }
+            let light_dir = (model_pos - Vec4::from((self.light_pos, 0.))).normalize();
+
+            let transformed_light_dir = m_mv * light_dir;
 
             triangle(
                 screen_coords[0],
@@ -390,20 +396,23 @@ impl ApplicationHandler for App {
                 // applications which do not always need to. Applications that redraw continuously
                 // can render here instead.
 
-                // Update internal state
-                self.world.update();
+                let since_last_frame = self.last_frame.elapsed();
+                let since_start = self.started.elapsed();
+
+                self.world.update(since_last_frame, since_start);
 
                 // Draw the current frame
-                self.world.draw(self.pixels.as_mut().unwrap().frame_mut());
 
                 let average_fps =
                     self.total_frames as f64 / (self.last_frame - self.started).as_secs_f64();
-                let this_frame_fps = 1.0f64 / (self.last_frame.elapsed().as_secs_f64());
+                let this_frame_fps = 1.0f64 / (since_last_frame.as_secs_f64());
                 if self.total_frames % 60 == 0 {
                     log::info!("average fps {}, this frame {}", average_fps, this_frame_fps);
                 }
                 self.total_frames += 1;
+
                 self.last_frame = Instant::now();
+                self.world.draw(self.pixels.as_mut().unwrap().frame_mut());
                 if let Err(err) = self.pixels.as_ref().unwrap().render() {
                     log_error("pixels.render", err);
                     event_loop.exit();
