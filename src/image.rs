@@ -52,50 +52,53 @@ impl Image {
 
 pub struct DepthBuffer {
     buf: Vec<f32>,
-    width: u16,
-    height: u16,
+    width: usize,
+    height: usize,
 }
 
 impl DepthBuffer {
     pub fn new(width: u16, height: u16) -> Self {
         let buf = vec![f32::MAX; width as usize * height as usize];
-        Self { width, height, buf }
+        Self {
+            width: width as usize,
+            height: height as usize,
+            buf,
+        }
     }
 
-    pub fn to_image(&self) -> Image {
-        let mut image = Image::new(self.width, self.height);
-
+    pub fn min_depth(&self) -> f32 {
         let min_depth = self
             .buf
             .iter()
             .min_by(|x, y| x.partial_cmp(&y).unwrap())
-            .unwrap();
+            .unwrap_or(&f32::MIN);
+        *min_depth
+    }
 
+    pub fn max_depth(&self) -> f32 {
         let max_depth = self
             .buf
             .iter()
             .filter(|&&x| x != f32::MAX)
             .max_by(|x, y| x.partial_cmp(&y).unwrap())
-            .unwrap();
+            .unwrap_or(&f32::MAX);
+        *max_depth
+    }
 
-        for x in 0..self.width as usize {
-            for y in 0..self.height as usize {
-                let v = self.buf[y * self.width as usize + x];
+    pub fn depth_to_u8(v: f32, min_depth: f32, max_depth: f32) -> u8 {
+        let v = v.clamp(min_depth, max_depth);
+        let v = (v - min_depth) / (max_depth - min_depth);
+        let v = (v * 255.) as u8;
 
-                let v = v.clamp(*min_depth, *max_depth);
-                let v = (v - *min_depth) / (max_depth - min_depth);
-                let v = (v * 255.) as u8;
-                let v = 255 - v;
-                let color = coloru8(v, v, v);
-                image.set(x, y, color);
-            }
-        }
-
-        image
+        v
     }
 
     pub fn buf_mut(&mut self) -> &mut Vec<f32> {
         &mut self.buf
+    }
+
+    pub fn buf(&self) -> &Vec<f32> {
+        &self.buf
     }
 
     #[inline]
@@ -110,12 +113,14 @@ impl DepthBuffer {
 
     #[inline]
     pub fn set(&mut self, x: usize, y: usize, val: f32) {
+        let y = self.height - y - 1;
         let idx = y * self.width as usize + x;
         self.buf[idx] = val;
     }
 
     #[inline]
     pub fn get(&self, x: usize, y: usize) -> f32 {
+        let y = self.height - y - 1;
         let idx = y * self.width as usize + x;
         self.buf[idx]
     }

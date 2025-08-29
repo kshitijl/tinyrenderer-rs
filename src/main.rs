@@ -232,7 +232,41 @@ impl World {
     fn draw(&mut self, frame: &mut [u8]) {
         self.clear();
         self.render();
-        frame.copy_from_slice(self.image.buf().as_slice());
+
+        frame.fill(255);
+
+        assert!(self.image.width() == self.width);
+        assert!(self.image.height() == self.width);
+        let image_buf = self.image.buf().as_slice();
+        for x in 0..self.width {
+            for y in 0..self.width {
+                let image_idx = 4 * y * self.width + 4 * x;
+                let frame_idx = 4 * y * (self.width * 2) + 4 * x;
+
+                for i in 0..4 {
+                    frame[frame_idx + i] = image_buf[image_idx + i];
+                }
+            }
+        }
+
+        assert!(self.depths.width() == self.width);
+        assert!(self.depths.height() == self.width);
+        let depth_buf = self.depths.buf();
+        let min_depth = self.depths.min_depth();
+        let max_depth = self.depths.max_depth();
+
+        for x in 0..self.width {
+            for y in 0..self.width {
+                let image_idx = y * self.width + x;
+                let frame_idx = 4 * y * (self.width * 2) + 4 * (x + self.width);
+
+                let depth = depth_buf[image_idx];
+                let gray = DepthBuffer::depth_to_u8(depth, min_depth, max_depth);
+
+                let color = [gray, gray, gray, 255];
+                frame[frame_idx..frame_idx + 4].copy_from_slice(&color);
+            }
+        }
     }
 }
 
@@ -274,7 +308,7 @@ impl ApplicationHandler for App {
             let surface_texture =
                 SurfaceTexture::new(window_size.width, window_size.height, window.clone());
             match Pixels::new(
-                self.world.width as u32,
+                2 * self.world.width as u32,
                 self.world.width as u32,
                 surface_texture,
             ) {
