@@ -47,6 +47,7 @@ struct Object {
 
 struct World {
     render_settings: RenderSettings,
+    movement_settings: MovementSettings,
 
     image: Image,
     depths: DepthBuffer,
@@ -63,12 +64,17 @@ struct World {
 
     time_since_start: Duration,
     angle_time: Duration,
-    should_rotate: bool,
 }
 
 struct RenderSettings {
     wireframe: bool,
     no_triangles: bool,
+    draw_lightbulb: bool,
+}
+
+struct MovementSettings {
+    rotate_objects: bool,
+    move_light_around: bool,
 }
 
 struct RenderingUniforms {
@@ -128,7 +134,7 @@ impl World {
 
         let light = Object {
             mesh: objects[0].mesh.clone(),
-            pos: vec3(-4., 1., 0.),
+            pos: vec3(0., 0., 3.),
             angle_y: 0.,
             scale: 0.3,
         };
@@ -142,6 +148,7 @@ impl World {
             render_settings: RenderSettings {
                 wireframe: false,
                 no_triangles: false,
+                draw_lightbulb: false,
             },
             camera: Camera {
                 pos: vec3(0., 0., 3.),
@@ -153,7 +160,10 @@ impl World {
             light,
             time_since_start: Duration::from_secs(0),
             angle_time: Duration::from_secs(0),
-            should_rotate: true,
+            movement_settings: MovementSettings {
+                rotate_objects: false,
+                move_light_around: false,
+            },
         }
     }
 
@@ -212,19 +222,25 @@ impl World {
         if self.is_key_down(KeyCode::KeyD) {
             self.move_(Direction::Right);
         }
-        if self.was_key_pressed(KeyCode::KeyR) {
-            self.should_rotate = !self.should_rotate;
-        }
         if self.was_key_pressed(KeyCode::Digit1) {
             self.render_settings.wireframe = !self.render_settings.wireframe;
         }
         if self.was_key_pressed(KeyCode::Digit2) {
             self.render_settings.no_triangles = !self.render_settings.no_triangles;
         }
+        if self.was_key_pressed(KeyCode::Digit3) {
+            self.movement_settings.move_light_around = !self.movement_settings.move_light_around;
+        }
+        if self.was_key_pressed(KeyCode::Digit4) {
+            self.movement_settings.rotate_objects = !self.movement_settings.rotate_objects;
+        }
+        if self.was_key_pressed(KeyCode::Digit5) {
+            self.render_settings.draw_lightbulb = !self.render_settings.draw_lightbulb;
+        }
 
         self.time_since_start = since_start;
 
-        if self.should_rotate {
+        if self.movement_settings.rotate_objects {
             self.angle_time += since_last_frame;
         }
 
@@ -233,11 +249,14 @@ impl World {
 
             object.angle_y = angle;
         }
-        let t = self.time_since_start.as_secs_f32();
 
-        //self.light.pos.x = 15. + 5. * f32::sin(1.0 * t);
-        self.light.pos.y = 1.9 * f32::sin(1.0 * t);
-        // self.light.pos.z = 7. + f32::cos(1.9 * t);
+        if self.movement_settings.move_light_around {
+            let t = self.time_since_start.as_secs_f32();
+
+            //self.light.pos.x = 15. + 5. * f32::sin(1.0 * t);
+            self.light.pos.y = 1.9 * f32::sin(1.0 * t);
+            // self.light.pos.z = 7. + f32::cos(1.9 * t);
+        }
 
         self.first_pressed_this_frame.clear();
     }
@@ -359,14 +378,16 @@ impl World {
             m_light_to_world,
         };
 
-        Self::render_object(
-            &self.light,
-            &uniforms,
-            &PositionedLight::None,
-            &mut Some(&mut self.image),
-            &mut self.depths,
-            &self.render_settings,
-        );
+        if self.render_settings.draw_lightbulb {
+            Self::render_object(
+                &self.light,
+                &uniforms,
+                &PositionedLight::None,
+                &mut Some(&mut self.image),
+                &mut self.depths,
+                &self.render_settings,
+            );
+        }
 
         for object in self.objects.iter() {
             Self::render_object(
