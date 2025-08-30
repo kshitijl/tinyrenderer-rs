@@ -527,11 +527,11 @@ impl ApplicationHandler for App {
                     if event.physical_key == PhysicalKey::Code(KeyCode::Escape) {
                         log::info!("bye");
                         event_loop.exit();
-                    } else if let PhysicalKey::Code(key) = event.physical_key {
-                        if !self.world.keys.contains(&key) {
-                            self.world.keys.insert(key);
-                            self.world.first_pressed_this_frame.insert(key);
-                        }
+                    } else if let PhysicalKey::Code(key) = event.physical_key
+                        && !self.world.keys.contains(&key)
+                    {
+                        self.world.keys.insert(key);
+                        self.world.first_pressed_this_frame.insert(key);
                     }
                 } else if event.state == ElementState::Released
                     && let PhysicalKey::Code(key) = event.physical_key
