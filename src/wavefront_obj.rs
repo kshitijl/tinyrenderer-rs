@@ -3,7 +3,7 @@ use nom::{
     IResult, Parser,
     branch::alt,
     bytes::complete::tag,
-    character::complete::{space0, space1, u32},
+    character::complete::{digit0, space0, space1, u32},
     combinator::map_res,
     multi::separated_list1,
     number::complete::float,
@@ -131,8 +131,8 @@ fn parse_line(input: &str) -> IResult<&str, ParsedLine> {
     preceded(space0, alt((parse_vertex, parse_face, parse_normal))).parse(input)
 }
 
-fn parse_face_triplet(input: &str) -> IResult<&str, (u32, u32, u32)> {
-    (terminated(u32, tag("/")), terminated(u32, tag("/")), u32).parse(input)
+fn parse_face_triplet(input: &str) -> IResult<&str, (u32, &str, u32)> {
+    (terminated(u32, tag("/")), terminated(digit0, tag("/")), u32).parse(input)
 }
 
 fn parse_tagged_vec3<'a, F, T>(kind: &str, f: F, input: &'a str) -> IResult<&'a str, T>
@@ -168,7 +168,7 @@ fn parse_face(input: &str) -> IResult<&str, ParsedLine> {
             (tag("f"), space1),
             separated_list1(space1, parse_face_triplet),
         ),
-        |ids: Vec<(u32, u32, u32)>| -> Result<ParsedLine, _> {
+        |ids: Vec<(u32, &str, u32)>| -> Result<ParsedLine, _> {
             if ids.len() == 3 {
                 let vertices = [
                     ids[0].0 as usize - 1,
@@ -230,6 +230,19 @@ mod tests {
             ParsedLine::Triangle(Face {
                 vertices: [82, 95, 94],
                 normals: [82, 95, 94]
+            })
+        );
+    }
+
+    #[test]
+    fn it_parses_face_without_uv() {
+        let p = parse_face("f 5//1 3//1 1//1").unwrap().1;
+
+        assert_eq!(
+            p,
+            ParsedLine::Triangle(Face {
+                vertices: [4, 2, 0],
+                normals: [0, 0, 0]
             })
         );
     }
