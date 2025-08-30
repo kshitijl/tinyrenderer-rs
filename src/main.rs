@@ -49,6 +49,9 @@ struct World {
     keys: HashMap<KeyCode, bool>,
 
     light_pos: Vec3,
+    time_since_start: Duration,
+    angle_time: Duration,
+    should_rotate: bool,
 }
 
 impl World {
@@ -91,6 +94,9 @@ impl World {
             },
             keys: HashMap::new(),
             light_pos: vec3(-1., 1., 0.),
+            time_since_start: Duration::from_secs(0),
+            angle_time: Duration::from_secs(0),
+            should_rotate: true,
         }
     }
 
@@ -124,7 +130,7 @@ impl World {
 
         log::info!("now at {}", self.camera.pos);
     }
-    fn update(&mut self, _since_last_frame: Duration, since_start: Duration) {
+    fn update(&mut self, since_last_frame: Duration, since_start: Duration) {
         if self.keys.get(&KeyCode::KeyW) == Some(&true) {
             self.move_(Direction::Forward);
         }
@@ -140,14 +146,27 @@ impl World {
         if self.keys.get(&KeyCode::KeyD) == Some(&true) {
             self.move_(Direction::Right);
         }
+        if self.keys.get(&KeyCode::KeyR) == Some(&true) {
+            self.should_rotate = true;
+        }
+        if self.keys.get(&KeyCode::KeyT) == Some(&true) {
+            self.should_rotate = false;
+        }
 
-        self.light_pos.x = 2. * since_start.as_secs_f32().sin();
+        self.time_since_start = since_start;
+
+        if self.should_rotate {
+            self.angle_time += since_last_frame;
+        }
     }
 
     fn render(&mut self) {
         let canvas_size = self.width as f32;
 
-        let angle = 0.;
+        let angle = self
+            .angle_time
+            .as_secs_f32()
+            .rem_euclid(2.0 * f32::consts::PI);
         let model_pos = vec3(0., 0., 0.);
 
         let m_rot = Mat4::from_rotation_y(angle);
