@@ -136,12 +136,12 @@ impl Add for RenderingResult {
 }
 
 struct ShadowMappingArgs<'buf> {
-    light_view: Mat4,
+    light_vp: Mat4,
+    light_viewport: Mat4,
     light_pov_depths: &'buf DepthBuffer,
 }
 
 impl World {
-    /// Create a new `World` instance that can draw a moving box.
     fn new(args: &Args) -> Self {
         let mut objects = Vec::new();
         let mut x = -(args.models.len() as f32);
@@ -170,7 +170,7 @@ impl World {
 
             let object = Object {
                 mesh: model,
-                pos: vec3(x, 0., 0.),
+                pos: vec3(x * 2., 0., 0.),
                 angle_y: 0.,
                 scale: 1.,
             };
@@ -183,7 +183,7 @@ impl World {
         let depths = DepthBuffer::new(args.canvas_size, args.canvas_size);
         let light_depths = DepthBuffer::new(args.canvas_size, args.canvas_size);
 
-        let initial_camera_pos = vec3(4., 0., 3.);
+        let initial_camera_pos = vec3(3., 0., 1.);
         let light = Object {
             mesh: objects[0].mesh.clone(),
             pos: initial_camera_pos,
@@ -343,11 +343,12 @@ impl World {
 
         for face_idx in 0..object.mesh.num_faces() {
             let mut screen_coords: [Vec3; 3] = [Vec3::new(0., 0., 0.); 3];
-            let mut world_coords: [Vec3; 3] = [Vec3::new(0.0, 0.0, 0.0); 3];
+            let mut world_coords: [Vec4; 3] = [Vec4::ZERO; 3];
             let mut clipped_verts: i32 = 0;
 
             for j in 0..3 {
                 let model_coordinates = Vec4::from((object.mesh.vertex(face_idx, j), 1.0));
+                world_coords[j] = m_model * model_coordinates;
 
                 let clip_coordinates = m_mvp * model_coordinates;
 
@@ -367,7 +368,6 @@ impl World {
                 // assert!(normalized_device_coordinates.z <= 1.);
 
                 screen_coords[j] = (m_viewport * normalized_device_coordinates).xyz();
-                world_coords[j] = normalized_device_coordinates.xyz();
             }
 
             if clipped_verts == 3 {
@@ -397,6 +397,7 @@ impl World {
 
                         let lighting = ForLighting {
                             light_dir: transformed_light_dir,
+                            world_coords,
                             na: normals[0],
                             nb: normals[1],
                             nc: normals[2],
@@ -444,7 +445,7 @@ impl World {
         let canvas_size = self.width as f32;
 
         let z_near = 1.;
-        let z_far = 10.;
+        let z_far = 12.;
         let m_projection = Mat4::perspective_rh_gl(f32::to_radians(60.), 1.0, z_near, z_far);
         let m_light_to_world = Mat4::IDENTITY;
 
@@ -454,7 +455,7 @@ impl World {
         // First from the light's POV
         let m_light_view = Mat4::look_at_rh(self.light.pos, self.objects[0].pos, self.camera.up);
 
-        let uniforms = RenderingUniforms {
+        let light_uniforms = RenderingUniforms {
             m_viewport,
             m_projection,
             m_view: m_light_view,
@@ -463,7 +464,7 @@ impl World {
         for object in self.objects.iter() {
             let light_pov_rendering_result = Self::render_object(
                 object,
-                &uniforms,
+                &light_uniforms,
                 &PositionedLight::At(self.light.pos),
                 &mut None,
                 &mut self.light_depths,
@@ -482,7 +483,8 @@ impl World {
         };
 
         let shadow_args = ShadowMappingArgs {
-            light_view: m_light_view,
+            light_vp: light_uniforms.m_projection * light_uniforms.m_view,
+            light_viewport: light_uniforms.m_viewport,
             light_pov_depths: &self.light_depths,
         };
 
@@ -787,6 +789,7 @@ fn signed_triangle_area(a: Vec2, b: Vec2, c: Vec2) -> f32 {
 
 struct ForLighting {
     light_dir: Vec4,
+    world_coords: [Vec4; 3],
     na: Vec4,
     nb: Vec4,
     nc: Vec4,
@@ -862,6 +865,7 @@ fn triangle(
                         None => coloru8(255, 255, 255),
                         Some(ForLighting {
                             light_dir,
+                            world_coords,
                             na,
                             nb,
                             nc,
@@ -872,14 +876,43 @@ fn triangle(
                             let dir_intensity = dir_intensity * (1. - ambient_intensity);
 
                             let total_intensity = ambient_intensity + dir_intensity;
-                            let color = vec3(255., 155., 0.) * total_intensity;
+                            let mut color = vec3(255., 155., 0.) * total_intensity;
+
+                            if let Some(shadow_args) = shadow {
+                                assert!(shadow_args.light_pov_depths.width() == width);
+                                let this_pixel_world_coords = alpha * world_coords[0]
+                                    + beta * world_coords[1]
+                                    + gamma * world_coords[2];
+
+                                let this_pixel_clip_coords =
+                                    shadow_args.light_vp * this_pixel_world_coords;
+                                let this_pixel_ndc = perspective_divided(this_pixel_clip_coords);
+                                let this_pixel_screen_coords =
+                                    (shadow_args.light_viewport * this_pixel_ndc).xyz();
+                                let p = this_pixel_screen_coords
+                                    .with_z(this_pixel_screen_coords.z / 2. + 0.5);
+
+                                if (p.x as i32) >= 0
+                                    && (p.y as i32) >= 0
+                                    && (p.x as usize) < width
+                                    && (p.y as usize) < height
+                                {
+                                    let light_pov_best_z = shadow_args
+                                        .light_pov_depths
+                                        .get(p.x as usize, p.y as usize);
+                                    if p.z < light_pov_best_z + 0.005 {
+                                        // do nothing; we're in light
+                                    } else {
+                                        let total_intensity = ambient_intensity;
+                                        color = vec3(255., 155., 0.) * total_intensity;
+                                        // color = vec3(255., 0., 0.);
+                                    }
+                                }
+                            }
+
                             color.as_u8vec3()
                         }
                     };
-
-                    if let Some(shadow_args) = shadow {
-                        // FIRST. we want the WORLD SPA
-                    }
 
                     if let Some(image) = image {
                         image.set(x, y, color);
