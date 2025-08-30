@@ -693,12 +693,24 @@ fn triangle(
     image: &mut Option<&mut Image>,
     depths: &mut DepthBuffer,
 ) {
-    let total_area = signed_triangle_area(a.xy(), b.xy(), c.xy());
+    let width = depths.width();
+    let height = depths.height();
 
     let smallest_x = f32::min(a.x, f32::min(b.x, c.x)) as i32;
     let smallest_y = f32::min(a.y, f32::min(b.y, c.y)) as i32;
     let biggest_x = f32::max(a.x, f32::max(b.x, c.x)) as i32;
     let biggest_y = f32::max(a.y, f32::max(b.y, c.y)) as i32;
+
+    let smallest_x = i32::max(smallest_x, 0);
+    let smallest_y = i32::max(smallest_y, 0);
+    let biggest_x = i32::min(biggest_x, width as i32 - 1);
+    let biggest_y = i32::min(biggest_y, height as i32 - 1);
+
+    if smallest_x > biggest_x || smallest_y > biggest_y {
+        return;
+    }
+
+    let total_area = signed_triangle_area(a.xy(), b.xy(), c.xy());
 
     for x in smallest_x..=biggest_x {
         for y in smallest_y..=biggest_y {
@@ -724,7 +736,7 @@ fn triangle(
             // assert!(z >= 0.);
             // assert!(z <= 1.);
 
-            if x >= 0 && x < depths.width() as i32 && y >= 0 && y < depths.height() as i32 {
+            if x >= 0 && x < width as i32 && y >= 0 && y < height as i32 {
                 let x = x as usize;
                 let y = y as usize;
                 if z < depths.get(x, y) {
