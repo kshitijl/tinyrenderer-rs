@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use std::f32;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use wavefront_obj::Mesh;
 use winit::application::ApplicationHandler;
 use winit::event::{DeviceEvent, DeviceId, ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
@@ -38,17 +39,27 @@ enum Direction {
     Left,
 }
 
+struct Object {
+    mesh: Mesh,
+    pos: Vec3,
+    angle_y: f32,
+}
+
 struct World {
-    image: Image,
-    depths: DepthBuffer,
-    model: wavefront_obj::Model,
-    width: usize,
     wireframe: bool,
     no_triangles: bool,
+
+    image: Image,
+    depths: DepthBuffer,
+    width: usize,
+
     camera: Camera,
+    light_pos: Vec3,
+
+    objects: Vec<Object>,
+
     keys: HashMap<KeyCode, bool>,
 
-    light_pos: Vec3,
     time_since_start: Duration,
     angle_time: Duration,
     should_rotate: bool,
@@ -57,25 +68,40 @@ struct World {
 impl World {
     /// Create a new `World` instance that can draw a moving box.
     fn new(args: &Args) -> Self {
-        let mut model = wavefront_obj::Model::from_file(args.model.as_str()).unwrap();
+        let mut objects = Vec::new();
+        let mut x = 0.;
 
-        let bb = model.bounding_box();
-        log::info!(
-            "Parsed {} vertices, {} faces, {} normals. Bounding box: {:?}. Scale: {}",
-            model.num_vertices(),
-            model.num_faces(),
-            model.num_normals(),
-            bb,
-            model.scale()
-        );
+        for model_filename in args.models.iter() {
+            let mut model = wavefront_obj::Mesh::from_file(model_filename.as_str()).unwrap();
 
-        model.normalize();
+            let bb = model.bounding_box();
+            log::info!(
+                "Parsed model {} with {} vertices, {} faces, {} normals. Bounding box: {:?}. Scale: {}",
+                model_filename,
+                model.num_vertices(),
+                model.num_faces(),
+                model.num_normals(),
+                bb,
+                model.scale()
+            );
 
-        log::info!(
-            "After normalization, bounding box is {:?} and scale is {}",
-            model.bounding_box(),
-            model.scale()
-        );
+            model.normalize();
+
+            log::info!(
+                "After normalization, bounding box is {:?} and scale is {}",
+                model.bounding_box(),
+                model.scale()
+            );
+
+            let object = Object {
+                mesh: model,
+                pos: vec3(x, 0., 0.),
+                angle_y: 0.,
+            };
+
+            objects.push(object);
+            x += 2.;
+        }
 
         let image = Image::new(args.canvas_size, args.canvas_size);
         let depths = DepthBuffer::new(args.canvas_size, args.canvas_size);
@@ -83,7 +109,7 @@ impl World {
         Self {
             image,
             depths,
-            model,
+            objects,
             width: args.canvas_size as usize,
             wireframe: args.wireframe,
             no_triangles: args.no_triangles,
@@ -158,100 +184,102 @@ impl World {
         if self.should_rotate {
             self.angle_time += since_last_frame;
         }
+
+        for (idx, object) in self.objects.iter_mut().enumerate() {
+            let angle = self.angle_time.as_secs_f32() * (idx as f32 + 1.);
+
+            object.angle_y = angle;
+        }
     }
 
     fn render(&mut self) {
         let canvas_size = self.width as f32;
 
-        let angle = self
-            .angle_time
-            .as_secs_f32()
-            .rem_euclid(2.0 * f32::consts::PI);
-        let model_pos = vec3(0., 0., 0.);
-
-        let m_rot = Mat4::from_rotation_y(angle);
-        let m_trans = Mat4::from_translation(model_pos.xyz());
-        let m_model = m_rot * m_trans;
-
         let m_view = Mat4::look_to_rh(self.camera.pos, self.camera.dir, self.camera.up);
-
         let z_near = 1.;
         let z_far = 10.;
         let m_projection = Mat4::perspective_rh_gl(f32::to_radians(60.), 1.0, z_near, z_far);
-
-        let m_mvp = m_projection * m_view * m_model;
-
         let m_light_to_world = Mat4::IDENTITY;
-        let m_normal = m_model.inverse().transpose();
 
         let m_viewport = Mat4::from_scale(Vec3::new(canvas_size / 2.0, canvas_size / 2.0, 1.))
             * Mat4::from_translation(Vec3::new(1.0, 1.0, 0.0));
 
-        for face_idx in 0..self.model.num_faces() {
-            let mut screen_coords: [Vec3; 3] = [Vec3::new(0., 0., 0.); 3];
-            let mut world_coords: [Vec3; 3] = [Vec3::new(0.0, 0.0, 0.0); 3];
+        for object in self.objects.iter() {
+            let m_rot = Mat4::from_rotation_y(object.angle_y);
+            let m_trans = Mat4::from_translation(object.pos);
+            let m_model = m_trans * m_rot;
 
-            for j in 0..3 {
-                let model_coordinates = Vec4::from((self.model.vertex(face_idx, j), 1.0));
+            let m_mvp = m_projection * m_view * m_model;
 
-                let world_coordinates = m_model * model_coordinates;
+            let m_normal = m_model.inverse().transpose();
 
-                let eye_coordinates = &m_view * &world_coordinates;
+            for face_idx in 0..object.mesh.num_faces() {
+                let mut screen_coords: [Vec3; 3] = [Vec3::new(0., 0., 0.); 3];
+                let mut world_coords: [Vec3; 3] = [Vec3::new(0.0, 0.0, 0.0); 3];
 
-                // assert!(eye_coordinates.z < 0.);
-                // assert!(eye_coordinates.w == 1.0);
+                for j in 0..3 {
+                    let model_coordinates = Vec4::from((object.mesh.vertex(face_idx, j), 1.0));
 
-                let _clip_coordinates = &m_projection * &eye_coordinates;
+                    let world_coordinates = m_model * model_coordinates;
 
-                let clip_coordinates = m_mvp * model_coordinates;
+                    let eye_coordinates = &m_view * &world_coordinates;
 
-                let normalized_device_coordinates = perspective_divided(clip_coordinates);
-                // TODO maybe skip drawing these
-                // assert!(normalized_device_coordinates.z >= -1.);
-                // assert!(normalized_device_coordinates.z <= 1.);
+                    // assert!(eye_coordinates.z < 0.);
+                    // assert!(eye_coordinates.w == 1.0);
 
-                screen_coords[j] = (&m_viewport * &normalized_device_coordinates).xyz();
-                world_coords[j] = normalized_device_coordinates.xyz();
-            }
+                    let _clip_coordinates = &m_projection * &eye_coordinates;
 
-            if !self.no_triangles {
-                // We're going to do lighting by dot-producting the light direction
-                // and normals, so it's really THOSE two that need to be transformed
-                // with respect to each other. It's also very important that we
-                // not normalize or xyz the normals and lighting vectors! Those are
-                // non-linear transforms and break the proof that transforming by
-                // the transpose of the inverse preserves dot products.
-                let mut normals = Vec::new();
-                for i in 0..3 {
-                    let normal = self.model.normal(face_idx, i);
-                    let normal = m_normal * Vec4::from((normal, 0.));
-                    normals.push(normal);
+                    let clip_coordinates = m_mvp * model_coordinates;
+
+                    let normalized_device_coordinates = perspective_divided(clip_coordinates);
+                    // TODO maybe skip drawing these
+                    // assert!(normalized_device_coordinates.z >= -1.);
+                    // assert!(normalized_device_coordinates.z <= 1.);
+
+                    screen_coords[j] = (&m_viewport * &normalized_device_coordinates).xyz();
+                    world_coords[j] = normalized_device_coordinates.xyz();
                 }
-                let light_dir =
-                    (Vec4::from((model_pos, 1.0)) - Vec4::from((self.light_pos, 1.))).normalize();
-                let transformed_light_dir = m_light_to_world * light_dir;
 
-                triangle(
-                    screen_coords[0],
-                    screen_coords[1],
-                    screen_coords[2],
-                    transformed_light_dir,
-                    normals[0],
-                    normals[1],
-                    normals[2],
-                    &mut self.image,
-                    &mut self.depths,
-                );
-            }
+                if !self.no_triangles {
+                    // We're going to do lighting by dot-producting the light direction
+                    // and normals, so it's really THOSE two that need to be transformed
+                    // with respect to each other. It's also very important that we
+                    // not normalize or xyz the normals and lighting vectors! Those are
+                    // non-linear transforms and break the proof that transforming by
+                    // the transpose of the inverse preserves dot products.
+                    let mut normals = Vec::new();
+                    for i in 0..3 {
+                        let normal = object.mesh.normal(face_idx, i);
+                        let normal = m_normal * Vec4::from((normal, 0.));
+                        normals.push(normal);
+                    }
+                    let light_dir = (Vec4::from((object.pos, 1.0))
+                        - Vec4::from((self.light_pos, 1.)))
+                    .normalize();
+                    let transformed_light_dir = m_light_to_world * light_dir;
 
-            if self.wireframe {
-                for i in 0..3 {
-                    linevf32(
-                        screen_coords[i % 3].xy(),
-                        screen_coords[(i + 1) % 3].xy(),
+                    triangle(
+                        screen_coords[0],
+                        screen_coords[1],
+                        screen_coords[2],
+                        transformed_light_dir,
+                        normals[0],
+                        normals[1],
+                        normals[2],
                         &mut self.image,
-                        RED,
+                        &mut self.depths,
                     );
+                }
+
+                if self.wireframe {
+                    for i in 0..3 {
+                        linevf32(
+                            screen_coords[i % 3].xy(),
+                            screen_coords[(i + 1) % 3].xy(),
+                            &mut self.image,
+                            RED,
+                        );
+                    }
                 }
             }
         }
@@ -580,8 +608,8 @@ fn perspective_divided(v: Vec4) -> Vec4 {
 
 #[derive(Parser)]
 struct Args {
-    /// Model file
-    model: String,
+    /// Model files
+    models: Vec<String>,
 
     /// Output image size in pixels. We only do square images for now.
     #[arg(short, long, default_value_t = 320)]

@@ -18,13 +18,13 @@ struct Face {
     normals: [usize; 3],
 }
 
-pub struct Model {
+pub struct Mesh {
     vertices: Vec<Vec3>,
     faces: Vec<Face>,
     normals: Vec<Vec3>,
 }
 
-impl Model {
+impl Mesh {
     pub fn bounding_box(&self) -> (Vec3, Vec3) {
         let mut min = self.vertices[0];
         let mut max = self.vertices[0];
@@ -249,13 +249,13 @@ mod tests {
 
     #[test]
     fn it_parses_files() {
-        let model = Model::from_file("./assets/head.obj").unwrap();
+        let model = Mesh::from_file("./assets/head.obj").unwrap();
 
         assert_eq!(model.num_faces(), 2492);
         assert_eq!(model.num_vertices(), 1258);
         assert_eq!(model.num_normals(), 1258);
 
-        let model = Model::from_file("./assets/cube.obj").unwrap();
+        let model = Mesh::from_file("./assets/cube.obj").unwrap();
 
         assert_eq!(model.num_faces(), 8);
         assert_eq!(model.num_vertices(), 8);
