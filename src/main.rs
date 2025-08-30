@@ -7,7 +7,7 @@ use clap::Parser;
 use error_iter::ErrorIter as _;
 use glam::{Mat3, Mat4, Vec2, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec3};
 use pixels::{Pixels, SurfaceTexture};
-use std::collections::HashMap;
+use std::collections::HashSet;
 use std::f32;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -58,7 +58,8 @@ struct World {
     light: Object,
     objects: Vec<Object>,
 
-    keys: HashMap<KeyCode, bool>,
+    keys: HashSet<KeyCode>,
+    first_pressed_this_frame: HashSet<KeyCode>,
 
     time_since_start: Duration,
     angle_time: Duration,
@@ -147,7 +148,8 @@ impl World {
                 dir: vec3(0., 0., -3.).normalize(),
                 up: vec3(0., 1., 0.).normalize(),
             },
-            keys: HashMap::new(),
+            keys: HashSet::new(),
+            first_pressed_this_frame: HashSet::new(),
             light,
             time_since_start: Duration::from_secs(0),
             angle_time: Duration::from_secs(0),
@@ -185,27 +187,33 @@ impl World {
 
         log::info!("now at {}", self.camera.pos);
     }
+
+    fn is_key_down(&self, key: KeyCode) -> bool {
+        self.keys.contains(&key)
+    }
+
+    fn was_key_pressed(&self, key: KeyCode) -> bool {
+        self.first_pressed_this_frame.contains(&key)
+    }
+
     fn update(&mut self, since_last_frame: Duration, since_start: Duration) {
-        if self.keys.get(&KeyCode::KeyW) == Some(&true) {
+        if self.is_key_down(KeyCode::KeyW) {
             self.move_(Direction::Forward);
         }
 
-        if self.keys.get(&KeyCode::KeyS) == Some(&true) {
+        if self.is_key_down(KeyCode::KeyS) {
             self.move_(Direction::Back);
         }
 
-        if self.keys.get(&KeyCode::KeyA) == Some(&true) {
+        if self.is_key_down(KeyCode::KeyA) {
             self.move_(Direction::Left);
         }
 
-        if self.keys.get(&KeyCode::KeyD) == Some(&true) {
+        if self.is_key_down(KeyCode::KeyD) {
             self.move_(Direction::Right);
         }
-        if self.keys.get(&KeyCode::KeyR) == Some(&true) {
-            self.should_rotate = true;
-        }
-        if self.keys.get(&KeyCode::KeyT) == Some(&true) {
-            self.should_rotate = false;
+        if self.was_key_pressed(KeyCode::KeyR) {
+            self.should_rotate = !self.should_rotate;
         }
 
         self.time_since_start = since_start;
@@ -224,6 +232,8 @@ impl World {
         //self.light.pos.x = 15. + 5. * f32::sin(1.0 * t);
         self.light.pos.y = 1.9 * f32::sin(1.0 * t);
         // self.light.pos.z = 7. + f32::cos(1.9 * t);
+
+        self.first_pressed_this_frame.clear();
     }
 
     fn render_object(
@@ -518,12 +528,15 @@ impl ApplicationHandler for App {
                         log::info!("bye");
                         event_loop.exit();
                     } else if let PhysicalKey::Code(key) = event.physical_key {
-                        self.world.keys.insert(key, true);
+                        if !self.world.keys.contains(&key) {
+                            self.world.keys.insert(key);
+                            self.world.first_pressed_this_frame.insert(key);
+                        }
                     }
                 } else if event.state == ElementState::Released
                     && let PhysicalKey::Code(key) = event.physical_key
                 {
-                    self.world.keys.insert(key, false);
+                    self.world.keys.remove(&key);
                 }
             }
             WindowEvent::CloseRequested => {
@@ -720,7 +733,6 @@ fn triangle(
 }
 
 fn perspective_divided(v: Vec4) -> Vec4 {
-    // Vec4::new(v.x / v.w, v.y / v.w, v.z / v.w, 1.)
     v / v.w
 }
 
@@ -759,14 +771,6 @@ fn main() -> std::io::Result<()> {
 
     let mut app = App::new(world);
     event_loop.run_app(&mut app).unwrap();
-
-    // let tga = tga::TgaFile::from_image(image);
-    // tga.save_to_path(format!("raw-output/frame-{:02}.tga", idx).as_str())?;
-
-    // if args.write_depth_buffer {
-    //     let depth_tga = tga::TgaFile::from_image(depths.to_image());
-    //     depth_tga.save_to_path(format!("raw-output/depth-{:02}.tga", idx).as_str())?;
-    // }
 
     Ok(())
 }
