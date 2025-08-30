@@ -288,19 +288,34 @@ impl World {
         for face_idx in 0..object.mesh.num_faces() {
             let mut screen_coords: [Vec3; 3] = [Vec3::new(0., 0., 0.); 3];
             let mut world_coords: [Vec3; 3] = [Vec3::new(0.0, 0.0, 0.0); 3];
+            let mut clipped_verts: i32 = 0;
 
             for j in 0..3 {
                 let model_coordinates = Vec4::from((object.mesh.vertex(face_idx, j), 1.0));
 
                 let clip_coordinates = m_mvp * model_coordinates;
 
+                let w = clip_coordinates.w;
+                if clip_coordinates.x < -w
+                    || clip_coordinates.x > w
+                    || clip_coordinates.y < -w
+                    || clip_coordinates.y > w
+                    || clip_coordinates.z < -w
+                    || clip_coordinates.z > w
+                {
+                    clipped_verts += 1;
+                }
+
                 let normalized_device_coordinates = perspective_divided(clip_coordinates);
-                // TODO maybe skip drawing these
                 // assert!(normalized_device_coordinates.z >= -1.);
                 // assert!(normalized_device_coordinates.z <= 1.);
 
                 screen_coords[j] = (m_viewport * normalized_device_coordinates).xyz();
                 world_coords[j] = normalized_device_coordinates.xyz();
+            }
+
+            if clipped_verts == 3 {
+                continue;
             }
 
             if !render_settings.no_triangles {
