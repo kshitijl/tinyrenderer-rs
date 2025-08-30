@@ -43,19 +43,19 @@ struct Object {
     mesh: Mesh,
     pos: Vec3,
     angle_y: f32,
+    scale: f32,
 }
 
 struct World {
-    wireframe: bool,
-    no_triangles: bool,
+    render_settings: RenderSettings,
 
     image: Image,
     depths: DepthBuffer,
     width: usize,
 
     camera: Camera,
-    light_pos: Vec3,
 
+    light: Object,
     objects: Vec<Object>,
 
     keys: HashMap<KeyCode, bool>,
@@ -65,11 +65,28 @@ struct World {
     should_rotate: bool,
 }
 
+struct RenderSettings {
+    wireframe: bool,
+    no_triangles: bool,
+}
+
+struct RenderingUniforms {
+    m_viewport: Mat4,
+    m_projection: Mat4,
+    m_light_to_world: Mat4,
+    m_view: Mat4,
+}
+
+enum PositionedLight {
+    None,
+    At(Vec3),
+}
+
 impl World {
     /// Create a new `World` instance that can draw a moving box.
     fn new(args: &Args) -> Self {
         let mut objects = Vec::new();
-        let mut x = 0.;
+        let mut x = -(args.models.len() as f32);
 
         for model_filename in args.models.iter() {
             let mut model = wavefront_obj::Mesh::from_file(model_filename.as_str()).unwrap();
@@ -97,6 +114,7 @@ impl World {
                 mesh: model,
                 pos: vec3(x, 0., 0.),
                 angle_y: 0.,
+                scale: 1.,
             };
 
             objects.push(object);
@@ -106,20 +124,29 @@ impl World {
         let image = Image::new(args.canvas_size, args.canvas_size);
         let depths = DepthBuffer::new(args.canvas_size, args.canvas_size);
 
+        let light = Object {
+            mesh: objects[0].mesh.clone(),
+            pos: vec3(-1., 1., 0.),
+            angle_y: 0.,
+            scale: 0.1,
+        };
+
         Self {
             image,
             depths,
             objects,
             width: args.canvas_size as usize,
-            wireframe: args.wireframe,
-            no_triangles: args.no_triangles,
+            render_settings: RenderSettings {
+                wireframe: args.wireframe,
+                no_triangles: args.no_triangles,
+            },
             camera: Camera {
                 pos: vec3(0., 0., 3.),
                 dir: vec3(0., 0., -3.).normalize(),
                 up: vec3(0., 1., 0.).normalize(),
             },
             keys: HashMap::new(),
-            light_pos: vec3(-1., 1., 0.),
+            light,
             time_since_start: Duration::from_secs(0),
             angle_time: Duration::from_secs(0),
             should_rotate: true,
@@ -190,6 +217,116 @@ impl World {
 
             object.angle_y = angle;
         }
+        let t = self.time_since_start.as_secs_f32();
+
+        self.light.pos.x = f32::sin(1.0 * t);
+        self.light.pos.y = f32::cos(1.3 * t);
+        self.light.pos.z = f32::cos(1.9 * t);
+    }
+
+    fn render_object(
+        object: &Object,
+        uniforms: &RenderingUniforms,
+        light: &PositionedLight,
+        image: &mut Image,
+        depths: &mut DepthBuffer,
+        render_settings: &RenderSettings,
+    ) {
+        let RenderingUniforms {
+            m_viewport,
+            m_projection,
+            m_light_to_world,
+            m_view,
+        } = uniforms;
+
+        let m_scale = Mat4::from_scale(vec3(object.scale, object.scale, object.scale));
+        let m_rot = Mat4::from_rotation_y(object.angle_y);
+        let m_trans = Mat4::from_translation(object.pos);
+        let m_model = m_trans * m_rot * m_scale;
+
+        let m_mvp = m_projection * m_view * m_model;
+
+        let m_normal = m_model.inverse().transpose();
+
+        for face_idx in 0..object.mesh.num_faces() {
+            let mut screen_coords: [Vec3; 3] = [Vec3::new(0., 0., 0.); 3];
+            let mut world_coords: [Vec3; 3] = [Vec3::new(0.0, 0.0, 0.0); 3];
+
+            for j in 0..3 {
+                let model_coordinates = Vec4::from((object.mesh.vertex(face_idx, j), 1.0));
+
+                let world_coordinates = m_model * model_coordinates;
+
+                let eye_coordinates = m_view * &world_coordinates;
+
+                // assert!(eye_coordinates.z < 0.);
+                // assert!(eye_coordinates.w == 1.0);
+
+                let _clip_coordinates = m_projection * &eye_coordinates;
+
+                let clip_coordinates = m_mvp * model_coordinates;
+
+                let normalized_device_coordinates = perspective_divided(clip_coordinates);
+                // TODO maybe skip drawing these
+                // assert!(normalized_device_coordinates.z >= -1.);
+                // assert!(normalized_device_coordinates.z <= 1.);
+
+                screen_coords[j] = (m_viewport * &normalized_device_coordinates).xyz();
+                world_coords[j] = normalized_device_coordinates.xyz();
+            }
+
+            if !render_settings.no_triangles {
+                let lighting = match light {
+                    PositionedLight::None => None,
+                    PositionedLight::At(light_pos) => {
+                        // We're going to do lighting by dot-producting the light direction
+                        // and normals, so it's really THOSE two that need to be transformed
+                        // with respect to each other. It's also very important that we
+                        // not normalize or xyz the normals and lighting vectors! Those are
+                        // non-linear transforms and break the proof that transforming by
+                        // the transpose of the inverse preserves dot products.
+                        let mut normals = Vec::new();
+                        for i in 0..3 {
+                            let normal = object.mesh.normal(face_idx, i);
+                            let normal = m_normal * Vec4::from((normal, 0.));
+                            normals.push(normal);
+                        }
+                        let light_dir = (Vec4::from((object.pos, 1.0))
+                            - Vec4::from((*light_pos, 1.)))
+                        .normalize();
+                        let transformed_light_dir = m_light_to_world * light_dir;
+
+                        let lighting = ForLighting {
+                            light_dir: transformed_light_dir,
+                            na: normals[0],
+                            nb: normals[1],
+                            nc: normals[2],
+                        };
+
+                        Some(lighting)
+                    }
+                };
+                triangle(
+                    screen_coords[0],
+                    screen_coords[1],
+                    screen_coords[2],
+                    lighting,
+                    image,
+                    depths,
+                );
+            }
+
+            if render_settings.wireframe {
+                for i in 0..3 {
+                    linevf32(
+                        screen_coords[i % 3].xy(),
+                        screen_coords[(i + 1) % 3].xy(),
+                        image,
+                        RED,
+                    );
+                }
+            }
+        }
     }
 
     fn render(&mut self) {
@@ -204,87 +341,31 @@ impl World {
         let m_viewport = Mat4::from_scale(Vec3::new(canvas_size / 2.0, canvas_size / 2.0, 1.))
             * Mat4::from_translation(Vec3::new(1.0, 1.0, 0.0));
 
+        let uniforms = RenderingUniforms {
+            m_viewport,
+            m_projection,
+            m_view,
+            m_light_to_world,
+        };
+
+        Self::render_object(
+            &self.light,
+            &uniforms,
+            &PositionedLight::None,
+            &mut self.image,
+            &mut self.depths,
+            &self.render_settings,
+        );
+
         for object in self.objects.iter() {
-            let m_rot = Mat4::from_rotation_y(object.angle_y);
-            let m_trans = Mat4::from_translation(object.pos);
-            let m_model = m_trans * m_rot;
-
-            let m_mvp = m_projection * m_view * m_model;
-
-            let m_normal = m_model.inverse().transpose();
-
-            for face_idx in 0..object.mesh.num_faces() {
-                let mut screen_coords: [Vec3; 3] = [Vec3::new(0., 0., 0.); 3];
-                let mut world_coords: [Vec3; 3] = [Vec3::new(0.0, 0.0, 0.0); 3];
-
-                for j in 0..3 {
-                    let model_coordinates = Vec4::from((object.mesh.vertex(face_idx, j), 1.0));
-
-                    let world_coordinates = m_model * model_coordinates;
-
-                    let eye_coordinates = &m_view * &world_coordinates;
-
-                    // assert!(eye_coordinates.z < 0.);
-                    // assert!(eye_coordinates.w == 1.0);
-
-                    let _clip_coordinates = &m_projection * &eye_coordinates;
-
-                    let clip_coordinates = m_mvp * model_coordinates;
-
-                    let normalized_device_coordinates = perspective_divided(clip_coordinates);
-                    // TODO maybe skip drawing these
-                    // assert!(normalized_device_coordinates.z >= -1.);
-                    // assert!(normalized_device_coordinates.z <= 1.);
-
-                    screen_coords[j] = (&m_viewport * &normalized_device_coordinates).xyz();
-                    world_coords[j] = normalized_device_coordinates.xyz();
-                }
-
-                if !self.no_triangles {
-                    // We're going to do lighting by dot-producting the light direction
-                    // and normals, so it's really THOSE two that need to be transformed
-                    // with respect to each other. It's also very important that we
-                    // not normalize or xyz the normals and lighting vectors! Those are
-                    // non-linear transforms and break the proof that transforming by
-                    // the transpose of the inverse preserves dot products.
-                    let mut normals = Vec::new();
-                    for i in 0..3 {
-                        let normal = object.mesh.normal(face_idx, i);
-                        let normal = m_normal * Vec4::from((normal, 0.));
-                        normals.push(normal);
-                    }
-                    let light_dir = (Vec4::from((object.pos, 1.0))
-                        - Vec4::from((self.light_pos, 1.)))
-                    .normalize();
-                    let transformed_light_dir = m_light_to_world * light_dir;
-
-                    let lighting = ForLighting {
-                        light_dir: transformed_light_dir,
-                        na: normals[0],
-                        nb: normals[1],
-                        nc: normals[2],
-                    };
-                    triangle(
-                        screen_coords[0],
-                        screen_coords[1],
-                        screen_coords[2],
-                        Some(lighting),
-                        &mut self.image,
-                        &mut self.depths,
-                    );
-                }
-
-                if self.wireframe {
-                    for i in 0..3 {
-                        linevf32(
-                            screen_coords[i % 3].xy(),
-                            screen_coords[(i + 1) % 3].xy(),
-                            &mut self.image,
-                            RED,
-                        );
-                    }
-                }
-            }
+            Self::render_object(
+                object,
+                &uniforms,
+                &PositionedLight::At(self.light.pos),
+                &mut self.image,
+                &mut self.depths,
+                &self.render_settings,
+            );
         }
     }
 
@@ -595,24 +676,24 @@ fn triangle(
                     depths.set(x, y, z);
                     let ambient_intensity = 0.3;
 
-                    let dir_intensity = if let Some(ForLighting {
-                        light_dir,
-                        na,
-                        nb,
-                        nc,
-                    }) = lighting
-                    {
-                        let normal = alpha * na + beta * nb + gamma * nc;
-                        let dir_intensity = normal.dot(-light_dir).clamp(0., 1.);
-                        let dir_intensity = (dir_intensity * 6.).round() / 6.;
-                        dir_intensity * (1. - ambient_intensity)
-                    } else {
-                        0.0
-                    };
+                    let color = match lighting {
+                        None => coloru8(255, 255, 255),
+                        Some(ForLighting {
+                            light_dir,
+                            na,
+                            nb,
+                            nc,
+                        }) => {
+                            let normal = alpha * na + beta * nb + gamma * nc;
+                            let dir_intensity = normal.dot(-light_dir).clamp(0., 1.);
+                            let dir_intensity = (dir_intensity * 6.).round() / 6.;
+                            let dir_intensity = dir_intensity * (1. - ambient_intensity);
 
-                    let total_intensity = ambient_intensity + dir_intensity;
-                    let color = vec3(255., 155., 0.) * total_intensity;
-                    let color = color.as_u8vec3();
+                            let total_intensity = ambient_intensity + dir_intensity;
+                            let color = vec3(255., 155., 0.) * total_intensity;
+                            color.as_u8vec3()
+                        }
+                    };
 
                     image.set(x, y, color);
                 }

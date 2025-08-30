@@ -12,12 +12,13 @@ use nom::{
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 struct Face {
     vertices: [usize; 3],
     normals: [usize; 3],
 }
 
+#[derive(Clone)]
 pub struct Mesh {
     vertices: Vec<Vec3>,
     faces: Vec<Face>,
