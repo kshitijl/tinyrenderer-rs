@@ -140,8 +140,8 @@ impl World {
             objects,
             width: args.canvas_size as usize,
             render_settings: RenderSettings {
-                wireframe: args.wireframe,
-                no_triangles: args.no_triangles,
+                wireframe: false,
+                no_triangles: false,
             },
             camera: Camera {
                 pos: vec3(0., 0., 3.),
@@ -214,6 +214,12 @@ impl World {
         }
         if self.was_key_pressed(KeyCode::KeyR) {
             self.should_rotate = !self.should_rotate;
+        }
+        if self.was_key_pressed(KeyCode::Digit1) {
+            self.render_settings.wireframe = !self.render_settings.wireframe;
+        }
+        if self.was_key_pressed(KeyCode::Digit2) {
+            self.render_settings.no_triangles = !self.render_settings.no_triangles;
         }
 
         self.time_since_start = since_start;
@@ -744,17 +750,6 @@ struct Args {
     /// Output image size in pixels. We only do square images for now.
     #[arg(short, long, default_value_t = 320)]
     canvas_size: u16,
-
-    /// Draw red wireframe lines
-    #[arg(short, long)]
-    wireframe: bool,
-
-    /// Don't draw triangles
-    #[arg(short, long)]
-    no_triangles: bool,
-
-    #[arg(long)]
-    write_depth_buffer: bool,
 }
 
 fn main() -> std::io::Result<()> {
