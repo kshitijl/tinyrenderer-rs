@@ -258,14 +258,17 @@ impl World {
                     .normalize();
                     let transformed_light_dir = m_light_to_world * light_dir;
 
+                    let lighting = ForLighting {
+                        light_dir: transformed_light_dir,
+                        na: normals[0],
+                        nb: normals[1],
+                        nc: normals[2],
+                    };
                     triangle(
                         screen_coords[0],
                         screen_coords[1],
                         screen_coords[2],
-                        transformed_light_dir,
-                        normals[0],
-                        normals[1],
-                        normals[2],
+                        Some(lighting),
                         &mut self.image,
                         &mut self.depths,
                     );
@@ -539,14 +542,18 @@ fn signed_triangle_area(a: Vec2, b: Vec2, c: Vec2) -> f32 {
     0.5 * answer as f32
 }
 
-fn triangle(
-    a: Vec3,
-    b: Vec3,
-    c: Vec3,
+struct ForLighting {
     light_dir: Vec4,
     na: Vec4,
     nb: Vec4,
     nc: Vec4,
+}
+
+fn triangle(
+    a: Vec3,
+    b: Vec3,
+    c: Vec3,
+    lighting: Option<ForLighting>,
     image: &mut Image,
     depths: &mut DepthBuffer,
 ) {
@@ -586,12 +593,25 @@ fn triangle(
                 let y = y as usize;
                 if z < depths.get(x, y) {
                     depths.set(x, y, z);
+                    let ambient_intensity = 0.3;
 
-                    let normal = alpha * na + beta * nb + gamma * nc;
-                    // let normal = normal.normalize();
-                    let intensity = normal.dot(-light_dir).clamp(0., 1.);
-                    let intensity = (intensity * 6.).round() / 6.;
-                    let color = vec3(255., 155., 0.) * intensity;
+                    let dir_intensity = if let Some(ForLighting {
+                        light_dir,
+                        na,
+                        nb,
+                        nc,
+                    }) = lighting
+                    {
+                        let normal = alpha * na + beta * nb + gamma * nc;
+                        let dir_intensity = normal.dot(-light_dir).clamp(0., 1.);
+                        let dir_intensity = (dir_intensity * 6.).round() / 6.;
+                        dir_intensity * (1. - ambient_intensity)
+                    } else {
+                        0.0
+                    };
+
+                    let total_intensity = ambient_intensity + dir_intensity;
+                    let color = vec3(255., 155., 0.) * total_intensity;
                     let color = color.as_u8vec3();
 
                     image.set(x, y, color);
