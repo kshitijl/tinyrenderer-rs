@@ -135,6 +135,11 @@ impl Add for RenderingResult {
     }
 }
 
+struct ShadowMappingArgs<'buf> {
+    light_view: Mat4,
+    light_pov_depths: &'buf DepthBuffer,
+}
+
 impl World {
     /// Create a new `World` instance that can draw a moving box.
     fn new(args: &Args) -> Self {
@@ -316,6 +321,7 @@ impl World {
         image: &mut Option<&mut Image>,
         depths: &mut DepthBuffer,
         render_settings: &RenderSettings,
+        shadow: &Option<ShadowMappingArgs>,
     ) -> RenderingResult {
         let mut answer = RenderingResult::new();
 
@@ -407,6 +413,7 @@ impl World {
                     lighting,
                     image,
                     depths,
+                    shadow,
                 );
 
                 answer = answer + triangle_result;
@@ -436,7 +443,6 @@ impl World {
 
         let canvas_size = self.width as f32;
 
-        let m_view = Mat4::look_to_rh(self.camera.pos, self.camera.dir, self.camera.up);
         let z_near = 1.;
         let z_far = 10.;
         let m_projection = Mat4::perspective_rh_gl(f32::to_radians(60.), 1.0, z_near, z_far);
@@ -445,11 +451,39 @@ impl World {
         let m_viewport = Mat4::from_scale(Vec3::new(canvas_size / 2.0, canvas_size / 2.0, 1.))
             * Mat4::from_translation(Vec3::new(1.0, 1.0, 0.0));
 
+        // First from the light's POV
+        let m_light_view = Mat4::look_at_rh(self.light.pos, self.objects[0].pos, self.camera.up);
+
+        let uniforms = RenderingUniforms {
+            m_viewport,
+            m_projection,
+            m_view: m_light_view,
+            m_light_to_world,
+        };
+        for object in self.objects.iter() {
+            let light_pov_rendering_result = Self::render_object(
+                object,
+                &uniforms,
+                &PositionedLight::At(self.light.pos),
+                &mut None,
+                &mut self.light_depths,
+                &self.render_settings,
+                &None,
+            );
+            answer = answer + light_pov_rendering_result;
+        }
+
+        let m_view = Mat4::look_to_rh(self.camera.pos, self.camera.dir, self.camera.up);
         let uniforms = RenderingUniforms {
             m_viewport,
             m_projection,
             m_view,
             m_light_to_world,
+        };
+
+        let shadow_args = ShadowMappingArgs {
+            light_view: m_light_view,
+            light_pov_depths: &self.light_depths,
         };
 
         if self.render_settings.draw_lightbulb {
@@ -461,8 +495,11 @@ impl World {
                     &mut Some(&mut self.image),
                     &mut self.depths,
                     &self.render_settings,
+                    &None,
                 );
         }
+
+        let some_shadow_args = Some(shadow_args);
 
         for object in self.objects.iter() {
             answer = answer
@@ -473,29 +510,8 @@ impl World {
                     &mut Some(&mut self.image),
                     &mut self.depths,
                     &self.render_settings,
+                    &some_shadow_args,
                 );
-        }
-
-        // Now again from the light's POV
-
-        let m_view = Mat4::look_at_rh(self.light.pos, self.objects[0].pos, self.camera.up);
-
-        let uniforms = RenderingUniforms {
-            m_viewport,
-            m_projection,
-            m_view,
-            m_light_to_world,
-        };
-        for object in self.objects.iter() {
-            let light_pov_rendering_result = Self::render_object(
-                object,
-                &uniforms,
-                &PositionedLight::At(self.light.pos),
-                &mut None,
-                &mut self.light_depths,
-                &self.render_settings,
-            );
-            answer = answer + light_pov_rendering_result;
         }
 
         answer
@@ -783,6 +799,7 @@ fn triangle(
     lighting: Option<ForLighting>,
     image: &mut Option<&mut Image>,
     depths: &mut DepthBuffer,
+    shadow: &Option<ShadowMappingArgs>,
 ) -> RenderingResult {
     let mut answer = RenderingResult::new();
     answer.num_unclipped_triangles_considered += 1;
@@ -859,6 +876,10 @@ fn triangle(
                             color.as_u8vec3()
                         }
                     };
+
+                    if let Some(shadow_args) = shadow {
+                        // FIRST. we want the WORLD SPA
+                    }
 
                     if let Some(image) = image {
                         image.set(x, y, color);
