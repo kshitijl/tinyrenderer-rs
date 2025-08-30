@@ -9,6 +9,7 @@ use glam::{Mat3, Mat4, Vec2, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec3};
 use pixels::{Pixels, SurfaceTexture};
 use std::collections::HashSet;
 use std::f32;
+use std::ops::Add;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use wavefront_obj::Mesh;
@@ -87,6 +88,51 @@ struct RenderingUniforms {
 enum PositionedLight {
     None,
     At(Vec3),
+}
+
+#[derive(Copy, Clone, PartialEq, Debug)]
+struct RenderingResult {
+    num_triangles_with_onscreen_bb: u32,
+    num_pixels_drawn: u32,
+    num_in_bounds_triangle_pixels_considered: u32,
+    num_depth_buffer_sets: u32,
+    num_triangle_pixels_consider: u32,
+    num_bb_pixels_consider: u32,
+    num_unclipped_triangles_considered: u32,
+}
+
+impl RenderingResult {
+    fn new() -> Self {
+        Self {
+            num_triangles_with_onscreen_bb: 0,
+            num_pixels_drawn: 0,
+            num_in_bounds_triangle_pixels_considered: 0,
+            num_depth_buffer_sets: 0,
+            num_triangle_pixels_consider: 0,
+            num_bb_pixels_consider: 0,
+            num_unclipped_triangles_considered: 0,
+        }
+    }
+}
+
+impl Add for RenderingResult {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        Self {
+            num_triangles_with_onscreen_bb: self.num_triangles_with_onscreen_bb
+                + other.num_triangles_with_onscreen_bb,
+            num_pixels_drawn: self.num_pixels_drawn + other.num_pixels_drawn,
+            num_in_bounds_triangle_pixels_considered: self.num_in_bounds_triangle_pixels_considered
+                + other.num_in_bounds_triangle_pixels_considered,
+            num_depth_buffer_sets: self.num_depth_buffer_sets + other.num_depth_buffer_sets,
+            num_triangle_pixels_consider: self.num_triangle_pixels_consider
+                + other.num_triangle_pixels_consider,
+            num_bb_pixels_consider: self.num_bb_pixels_consider + other.num_bb_pixels_consider,
+            num_unclipped_triangles_considered: self.num_unclipped_triangles_considered
+                + other.num_unclipped_triangles_considered,
+        }
+    }
 }
 
 impl World {
@@ -268,7 +314,9 @@ impl World {
         image: &mut Option<&mut Image>,
         depths: &mut DepthBuffer,
         render_settings: &RenderSettings,
-    ) {
+    ) -> RenderingResult {
+        let mut answer = RenderingResult::new();
+
         let RenderingUniforms {
             m_viewport,
             m_projection,
@@ -349,7 +397,8 @@ impl World {
                         Some(lighting)
                     }
                 };
-                triangle(
+
+                let triangle_result = triangle(
                     screen_coords[0],
                     screen_coords[1],
                     screen_coords[2],
@@ -357,24 +406,32 @@ impl World {
                     image,
                     depths,
                 );
+
+                answer = answer + triangle_result;
             }
 
             if let Some(image) = image
                 && render_settings.wireframe
             {
                 for i in 0..3 {
-                    linevf32(
+                    let line_result = linevf32(
                         screen_coords[i % 3].xy(),
                         screen_coords[(i + 1) % 3].xy(),
                         image,
                         RED,
                     );
+
+                    answer = answer + line_result;
                 }
             }
         }
+
+        answer
     }
 
-    fn render(&mut self) {
+    fn render(&mut self) -> RenderingResult {
+        let mut answer = RenderingResult::new();
+
         let canvas_size = self.width as f32;
 
         let m_view = Mat4::look_to_rh(self.camera.pos, self.camera.dir, self.camera.up);
@@ -394,25 +451,27 @@ impl World {
         };
 
         if self.render_settings.draw_lightbulb {
-            Self::render_object(
-                &self.light,
-                &uniforms,
-                &PositionedLight::None,
-                &mut Some(&mut self.image),
-                &mut self.depths,
-                &self.render_settings,
-            );
+            answer = answer
+                + Self::render_object(
+                    &self.light,
+                    &uniforms,
+                    &PositionedLight::None,
+                    &mut Some(&mut self.image),
+                    &mut self.depths,
+                    &self.render_settings,
+                );
         }
 
         for object in self.objects.iter() {
-            Self::render_object(
-                object,
-                &uniforms,
-                &PositionedLight::At(self.light.pos),
-                &mut Some(&mut self.image),
-                &mut self.depths,
-                &self.render_settings,
-            );
+            answer = answer
+                + Self::render_object(
+                    object,
+                    &uniforms,
+                    &PositionedLight::At(self.light.pos),
+                    &mut Some(&mut self.image),
+                    &mut self.depths,
+                    &self.render_settings,
+                );
         }
 
         // Now again from the light's POV
@@ -426,7 +485,7 @@ impl World {
             m_light_to_world,
         };
         for object in self.objects.iter() {
-            Self::render_object(
+            let light_pov_rendering_result = Self::render_object(
                 object,
                 &uniforms,
                 &PositionedLight::At(self.light.pos),
@@ -434,7 +493,10 @@ impl World {
                 &mut self.light_depths,
                 &self.render_settings,
             );
+            answer = answer + light_pov_rendering_result;
         }
+
+        answer
     }
 
     fn clear(&mut self) {
@@ -454,9 +516,9 @@ impl World {
         depth_data.as_mut_slice().fill(f32::MAX);
     }
 
-    fn draw(&mut self, frame: &mut [u8]) {
+    fn draw(&mut self, frame: &mut [u8]) -> RenderingResult {
         self.clear();
-        self.render();
+        let rendering_result = self.render();
 
         frame.fill(255);
 
@@ -491,6 +553,8 @@ impl World {
                 frame[frame_idx..frame_idx + 4].copy_from_slice(&color);
             }
         }
+
+        rendering_result
     }
 }
 
@@ -621,13 +685,18 @@ impl ApplicationHandler for App {
                 let average_fps =
                     self.total_frames as f64 / (self.last_frame - self.started).as_secs_f64();
                 let this_frame_fps = 1.0f64 / (since_last_frame.as_secs_f64());
-                if self.total_frames % 60 == 0 {
-                    log::info!("average fps {}, this frame {}", average_fps, this_frame_fps);
-                }
                 self.total_frames += 1;
 
                 self.last_frame = Instant::now();
-                self.world.draw(self.pixels.as_mut().unwrap().frame_mut());
+                let rendering_result = self.world.draw(self.pixels.as_mut().unwrap().frame_mut());
+                if self.total_frames % 60 == 0 {
+                    log::info!(
+                        "{:?} average fps {}, this frame {}",
+                        rendering_result,
+                        average_fps,
+                        this_frame_fps
+                    );
+                }
                 if let Err(err) = self.pixels.as_ref().unwrap().render() {
                     log_error("pixels.render", err);
                     event_loop.exit();
@@ -641,7 +710,9 @@ impl ApplicationHandler for App {
     }
 }
 
-fn linei32(ax: i32, ay: i32, bx: i32, by: i32, image: &mut Image, color: Color) {
+fn linei32(ax: i32, ay: i32, bx: i32, by: i32, image: &mut Image, color: Color) -> RenderingResult {
+    let mut answer = RenderingResult::new();
+
     let steep = (by - ay).abs() > (bx - ax).abs();
     let (ax, bx, ay, by) = if !steep {
         (ax, bx, ay, by)
@@ -669,6 +740,7 @@ fn linei32(ax: i32, ay: i32, bx: i32, by: i32, image: &mut Image, color: Color) 
         // rather than outside the loop so we draw any visible portions of lines
         // whose endpoints might lie outside bounds.
         if xx >= 0 && yy >= 0 && xx < image.width() as i32 && yy < image.height() as i32 {
+            answer.num_pixels_drawn += 1;
             image.set(xx as usize, yy as usize, color);
         }
 
@@ -678,13 +750,15 @@ fn linei32(ax: i32, ay: i32, bx: i32, by: i32, image: &mut Image, color: Color) 
         ierror -= 2 * (bx - ax) * should_incr;
         x += 1;
     }
+
+    answer
 }
 
-fn linef32(ax: f32, ay: f32, bx: f32, by: f32, image: &mut Image, color: Color) {
+fn linef32(ax: f32, ay: f32, bx: f32, by: f32, image: &mut Image, color: Color) -> RenderingResult {
     linei32(ax as i32, ay as i32, bx as i32, by as i32, image, color)
 }
 
-fn linevf32(a: Vec2, b: Vec2, image: &mut Image, color: Color) {
+fn linevf32(a: Vec2, b: Vec2, image: &mut Image, color: Color) -> RenderingResult {
     linef32(a.x, a.y, b.x, b.y, image, color)
 }
 
@@ -707,7 +781,10 @@ fn triangle(
     lighting: Option<ForLighting>,
     image: &mut Option<&mut Image>,
     depths: &mut DepthBuffer,
-) {
+) -> RenderingResult {
+    let mut answer = RenderingResult::new();
+    answer.num_unclipped_triangles_considered += 1;
+
     let width = depths.width();
     let height = depths.height();
 
@@ -722,13 +799,15 @@ fn triangle(
     let biggest_y = i32::min(biggest_y, height as i32 - 1);
 
     if smallest_x > biggest_x || smallest_y > biggest_y {
-        return;
+        return answer;
     }
 
+    answer.num_triangles_with_onscreen_bb += 1;
     let total_area = signed_triangle_area(a.xy(), b.xy(), c.xy());
 
     for x in smallest_x..=biggest_x {
         for y in smallest_y..=biggest_y {
+            answer.num_bb_pixels_consider += 1;
             let p = Vec2::new(x as f32, y as f32);
 
             let alpha = signed_triangle_area(p, b.xy(), c.xy()) / total_area;
@@ -750,12 +829,14 @@ fn triangle(
             let z = z / 2. + 0.5;
             // assert!(z >= 0.);
             // assert!(z <= 1.);
-
+            answer.num_triangle_pixels_consider += 1;
             if x >= 0 && x < width as i32 && y >= 0 && y < height as i32 {
+                answer.num_in_bounds_triangle_pixels_considered += 1;
                 let x = x as usize;
                 let y = y as usize;
                 if z < depths.get(x, y) {
                     depths.set(x, y, z);
+                    answer.num_depth_buffer_sets += 1;
                     let ambient_intensity = 0.3;
 
                     let color = match lighting {
@@ -778,12 +859,15 @@ fn triangle(
                     };
 
                     if let Some(image) = image {
-                        image.set(x, y, color)
+                        image.set(x, y, color);
+                        answer.num_pixels_drawn += 1
                     }
                 }
             }
         }
     }
+
+    answer
 }
 
 fn perspective_divided(v: Vec4) -> Vec4 {
