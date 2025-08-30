@@ -51,6 +51,7 @@ struct World {
 
     image: Image,
     depths: DepthBuffer,
+    light_depths: DepthBuffer,
     width: usize,
 
     camera: Camera,
@@ -123,17 +124,19 @@ impl World {
 
         let image = Image::new(args.canvas_size, args.canvas_size);
         let depths = DepthBuffer::new(args.canvas_size, args.canvas_size);
+        let light_depths = DepthBuffer::new(args.canvas_size, args.canvas_size);
 
         let light = Object {
             mesh: objects[0].mesh.clone(),
-            pos: vec3(-1., 1., 0.),
+            pos: vec3(-4., 1., 0.),
             angle_y: 0.,
-            scale: 0.1,
+            scale: 0.3,
         };
 
         Self {
             image,
             depths,
+            light_depths,
             objects,
             width: args.canvas_size as usize,
             render_settings: RenderSettings {
@@ -219,16 +222,16 @@ impl World {
         }
         let t = self.time_since_start.as_secs_f32();
 
-        self.light.pos.x = f32::sin(1.0 * t);
-        self.light.pos.y = f32::cos(1.3 * t);
-        self.light.pos.z = f32::cos(1.9 * t);
+        //self.light.pos.x = 15. + 5. * f32::sin(1.0 * t);
+        self.light.pos.y = 1.9 * f32::sin(1.0 * t);
+        // self.light.pos.z = 7. + f32::cos(1.9 * t);
     }
 
     fn render_object(
         object: &Object,
         uniforms: &RenderingUniforms,
         light: &PositionedLight,
-        image: &mut Image,
+        image: &mut Option<&mut Image>,
         depths: &mut DepthBuffer,
         render_settings: &RenderSettings,
     ) {
@@ -254,15 +257,6 @@ impl World {
 
             for j in 0..3 {
                 let model_coordinates = Vec4::from((object.mesh.vertex(face_idx, j), 1.0));
-
-                let world_coordinates = m_model * model_coordinates;
-
-                let eye_coordinates = m_view * &world_coordinates;
-
-                // assert!(eye_coordinates.z < 0.);
-                // assert!(eye_coordinates.w == 1.0);
-
-                let _clip_coordinates = m_projection * &eye_coordinates;
 
                 let clip_coordinates = m_mvp * model_coordinates;
 
@@ -316,16 +310,16 @@ impl World {
                 );
             }
 
-            if render_settings.wireframe {
-                for i in 0..3 {
-                    linevf32(
-                        screen_coords[i % 3].xy(),
-                        screen_coords[(i + 1) % 3].xy(),
-                        image,
-                        RED,
-                    );
-                }
-            }
+            // if render_settings.wireframe {
+            //     for i in 0..3 {
+            //         linevf32(
+            //             screen_coords[i % 3].xy(),
+            //             screen_coords[(i + 1) % 3].xy(),
+            //             image.unwrap(),
+            //             RED,
+            //         );
+            //     }
+            // }
         }
     }
 
@@ -352,7 +346,7 @@ impl World {
             &self.light,
             &uniforms,
             &PositionedLight::None,
-            &mut self.image,
+            &mut Some(&mut self.image),
             &mut self.depths,
             &self.render_settings,
         );
@@ -362,14 +356,36 @@ impl World {
                 object,
                 &uniforms,
                 &PositionedLight::At(self.light.pos),
-                &mut self.image,
+                &mut Some(&mut self.image),
                 &mut self.depths,
+                &self.render_settings,
+            );
+        }
+
+        // Now again from the light's POV
+
+        let m_view = Mat4::look_at_rh(self.light.pos, self.objects[0].pos, self.camera.up);
+
+        let uniforms = RenderingUniforms {
+            m_viewport,
+            m_projection,
+            m_view,
+            m_light_to_world,
+        };
+        for object in self.objects.iter() {
+            Self::render_object(
+                object,
+                &uniforms,
+                &PositionedLight::At(self.light.pos),
+                &mut None,
+                &mut self.light_depths,
                 &self.render_settings,
             );
         }
     }
 
     fn clear(&mut self) {
+        // TODO put this clearing code in Image and DepthBuffer respectively
         let data = self.image.buf_mut();
         let u32_slice = unsafe {
             std::slice::from_raw_parts_mut(data.as_mut_ptr() as *mut u32, data.len() / 4)
@@ -379,6 +395,9 @@ impl World {
         u32_slice.fill(pattern);
 
         let depth_data = self.depths.buf_mut();
+        depth_data.as_mut_slice().fill(f32::MAX);
+
+        let depth_data = self.light_depths.buf_mut();
         depth_data.as_mut_slice().fill(f32::MAX);
     }
 
@@ -402,11 +421,11 @@ impl World {
             }
         }
 
-        assert!(self.depths.width() == self.width);
-        assert!(self.depths.height() == self.width);
-        let depth_buf = self.depths.buf();
-        let min_depth = self.depths.min_depth();
-        let max_depth = self.depths.max_depth();
+        assert!(self.light_depths.width() == self.width);
+        assert!(self.light_depths.height() == self.width);
+        let depth_buf = self.light_depths.buf();
+        let min_depth = self.light_depths.min_depth();
+        let max_depth = self.light_depths.max_depth();
 
         for x in 0..self.width {
             for y in 0..self.width {
@@ -635,7 +654,7 @@ fn triangle(
     b: Vec3,
     c: Vec3,
     lighting: Option<ForLighting>,
-    image: &mut Image,
+    image: &mut Option<&mut Image>,
     depths: &mut DepthBuffer,
 ) {
     let total_area = signed_triangle_area(a.xy(), b.xy(), c.xy());
@@ -669,7 +688,7 @@ fn triangle(
             // assert!(z >= 0.);
             // assert!(z <= 1.);
 
-            if x >= 0 && x < image.width() as i32 && y >= 0 && y < image.height() as i32 {
+            if x >= 0 && x < depths.width() as i32 && y >= 0 && y < depths.height() as i32 {
                 let x = x as usize;
                 let y = y as usize;
                 if z < depths.get(x, y) {
@@ -695,7 +714,9 @@ fn triangle(
                         }
                     };
 
-                    image.set(x, y, color);
+                    if let Some(image) = image {
+                        image.set(x, y, color)
+                    }
                 }
             }
         }
