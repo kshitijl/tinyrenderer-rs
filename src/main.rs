@@ -178,12 +178,14 @@ impl World {
         let depths = DepthBuffer::new(args.canvas_size, args.canvas_size);
         let light_depths = DepthBuffer::new(args.canvas_size, args.canvas_size);
 
+        let initial_camera_pos = vec3(4., 0., 3.);
         let light = Object {
             mesh: objects[0].mesh.clone(),
-            pos: vec3(0., 0., 3.),
+            pos: initial_camera_pos,
             angle_y: 0.,
             scale: 0.3,
         };
+        let camera_dir = (objects[0].pos - initial_camera_pos).normalize();
 
         Self {
             image,
@@ -197,8 +199,8 @@ impl World {
                 draw_lightbulb: false,
             },
             camera: Camera {
-                pos: vec3(0., 0., 3.),
-                dir: vec3(0., 0., -3.).normalize(),
+                pos: initial_camera_pos,
+                dir: camera_dir,
                 up: vec3(0., 1., 0.).normalize(),
             },
             keys: HashSet::new(),
