@@ -6,7 +6,6 @@ use crate::image::*;
 use clap::Parser;
 use error_iter::ErrorIter as _;
 use glam::{Mat3, Mat4, Vec2, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec3};
-use log;
 use pixels::{Pixels, SurfaceTexture};
 use std::collections::HashMap;
 use std::f32;
@@ -265,7 +264,7 @@ impl World {
                 // assert!(normalized_device_coordinates.z >= -1.);
                 // assert!(normalized_device_coordinates.z <= 1.);
 
-                screen_coords[j] = (m_viewport * &normalized_device_coordinates).xyz();
+                screen_coords[j] = (m_viewport * normalized_device_coordinates).xyz();
                 world_coords[j] = normalized_device_coordinates.xyz();
             }
 
@@ -310,16 +309,18 @@ impl World {
                 );
             }
 
-            // if render_settings.wireframe {
-            //     for i in 0..3 {
-            //         linevf32(
-            //             screen_coords[i % 3].xy(),
-            //             screen_coords[(i + 1) % 3].xy(),
-            //             image.unwrap(),
-            //             RED,
-            //         );
-            //     }
-            // }
+            if let Some(image) = image
+                && render_settings.wireframe
+            {
+                for i in 0..3 {
+                    linevf32(
+                        screen_coords[i % 3].xy(),
+                        screen_coords[(i + 1) % 3].xy(),
+                        image,
+                        RED,
+                    );
+                }
+            }
         }
     }
 
@@ -415,9 +416,8 @@ impl World {
                 let image_idx = 4 * y * self.width + 4 * x;
                 let frame_idx = 4 * y * (self.width * 2) + 4 * x;
 
-                for i in 0..4 {
-                    frame[frame_idx + i] = image_buf[image_idx + i];
-                }
+                frame[frame_idx..frame_idx + 4]
+                    .copy_from_slice(&image_buf[image_idx..image_idx + 4]);
             }
         }
 
@@ -454,7 +454,7 @@ struct App {
 impl App {
     fn new(world: World) -> Self {
         let started = Instant::now();
-        let last_frame = started.clone();
+        let last_frame = started;
         Self {
             window: None,
             pixels: None,
@@ -500,13 +500,9 @@ impl ApplicationHandler for App {
     }
 
     fn device_event(&mut self, _: &ActiveEventLoop, _: DeviceId, event: DeviceEvent) {
-        match event {
-            DeviceEvent::MouseMotion { delta } => {
-                let (x, y) = delta;
-                self.world.camera_mouse(x, y);
-            }
-
-            _ => {}
+        if let DeviceEvent::MouseMotion { delta } = event {
+            let (x, y) = delta;
+            self.world.camera_mouse(x, y);
         }
     }
 
@@ -524,10 +520,10 @@ impl ApplicationHandler for App {
                     } else if let PhysicalKey::Code(key) = event.physical_key {
                         self.world.keys.insert(key, true);
                     }
-                } else if event.state == ElementState::Released {
-                    if let PhysicalKey::Code(key) = event.physical_key {
-                        self.world.keys.insert(key, false);
-                    }
+                } else if event.state == ElementState::Released
+                    && let PhysicalKey::Code(key) = event.physical_key
+                {
+                    self.world.keys.insert(key, false);
                 }
             }
             WindowEvent::CloseRequested => {
@@ -639,7 +635,7 @@ fn linevf32(a: Vec2, b: Vec2, image: &mut Image, color: Color) {
 
 fn signed_triangle_area(a: Vec2, b: Vec2, c: Vec2) -> f32 {
     let answer = (b.y - a.y) * (b.x + a.x) + (c.y - b.y) * (c.x + b.x) + (a.y - c.y) * (a.x + c.x);
-    0.5 * answer as f32
+    0.5 * answer
 }
 
 struct ForLighting {

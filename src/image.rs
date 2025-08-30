@@ -43,8 +43,8 @@ impl Image {
     #[inline]
     pub fn set(&mut self, x: usize, y: usize, color: Color) {
         let y = self.height - y - 1;
-        let idx = (y * self.width as usize + x) * 4;
-        self.buf[idx + 0] = color.x;
+        let idx = (y * self.width + x) * 4;
+        self.buf[idx] = color.x;
         self.buf[idx + 1] = color.y;
         self.buf[idx + 2] = color.z;
     }
@@ -70,7 +70,7 @@ impl DepthBuffer {
         let min_depth = self
             .buf
             .iter()
-            .min_by(|x, y| x.partial_cmp(&y).unwrap())
+            .min_by(|x, y| x.partial_cmp(y).unwrap())
             .unwrap_or(&f32::MIN);
         *min_depth
     }
@@ -80,7 +80,7 @@ impl DepthBuffer {
             .buf
             .iter()
             .filter(|&&x| x != f32::MAX)
-            .max_by(|x, y| x.partial_cmp(&y).unwrap())
+            .max_by(|x, y| x.partial_cmp(y).unwrap())
             .unwrap_or(&f32::MAX);
         *max_depth
     }
@@ -88,9 +88,8 @@ impl DepthBuffer {
     pub fn depth_to_u8(v: f32, min_depth: f32, max_depth: f32) -> u8 {
         let v = v.clamp(min_depth, max_depth);
         let v = (v - min_depth) / (max_depth - min_depth);
-        let v = (v * 255.) as u8;
 
-        v
+        (v * 255.) as u8
     }
 
     pub fn buf_mut(&mut self) -> &mut Vec<f32> {
@@ -114,14 +113,14 @@ impl DepthBuffer {
     #[inline]
     pub fn set(&mut self, x: usize, y: usize, val: f32) {
         let y = self.height - y - 1;
-        let idx = y * self.width as usize + x;
+        let idx = y * self.width + x;
         self.buf[idx] = val;
     }
 
     #[inline]
     pub fn get(&self, x: usize, y: usize) -> f32 {
         let y = self.height - y - 1;
-        let idx = y * self.width as usize + x;
+        let idx = y * self.width + x;
         self.buf[idx]
     }
 }

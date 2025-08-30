@@ -46,8 +46,7 @@ impl Mesh {
     pub fn scale(&self) -> f32 {
         let bb = self.bounding_box();
 
-        let model_scale = f32::max(bb.1.x - bb.0.x, f32::max(bb.1.y - bb.0.y, bb.1.z - bb.0.z));
-        model_scale
+        f32::max(bb.1.x - bb.0.x, f32::max(bb.1.y - bb.0.y, bb.1.z - bb.0.z))
     }
 
     pub fn normalize(&mut self) {
@@ -96,9 +95,9 @@ impl Mesh {
             let line = line_result?;
 
             match parse_line(&line) {
-                Ok((_remaining, data)) => {
-                    if _remaining.len() != 0 {
-                        println!("{}", _remaining);
+                Ok((remaining, data)) => {
+                    if !remaining.is_empty() {
+                        println!("{}", remaining);
                     }
                     match data {
                         ParsedLine::Vertex(v) => vertices.push(v),
