@@ -141,6 +141,145 @@ struct ShadowMappingArgs<'buf> {
     light_pov_depths: &'buf DepthBuffer,
 }
 
+struct ForLighting {
+    light_dir: Vec4,
+    world_coords: [Vec4; 3],
+    na: Vec4,
+    nb: Vec4,
+    nc: Vec4,
+}
+
+fn triangle(
+    a: Vec3,
+    b: Vec3,
+    c: Vec3,
+    lighting: Option<ForLighting>,
+    image: &mut Option<&mut Image>,
+    depths: &mut DepthBuffer,
+    shadow: &Option<ShadowMappingArgs>,
+) -> RenderingResult {
+    let mut answer = RenderingResult::new();
+    answer.num_unclipped_triangles_considered += 1;
+
+    let width = depths.width();
+    let height = depths.height();
+
+    let smallest_x = f32::min(a.x, f32::min(b.x, c.x)) as i32;
+    let smallest_y = f32::min(a.y, f32::min(b.y, c.y)) as i32;
+    let biggest_x = f32::max(a.x, f32::max(b.x, c.x)) as i32;
+    let biggest_y = f32::max(a.y, f32::max(b.y, c.y)) as i32;
+
+    let smallest_x = i32::max(smallest_x, 0);
+    let smallest_y = i32::max(smallest_y, 0);
+    let biggest_x = i32::min(biggest_x, width as i32 - 1);
+    let biggest_y = i32::min(biggest_y, height as i32 - 1);
+
+    if smallest_x > biggest_x || smallest_y > biggest_y {
+        return answer;
+    }
+
+    answer.num_triangles_with_onscreen_bb += 1;
+    let total_area = signed_triangle_area(a.xy(), b.xy(), c.xy());
+
+    for x in smallest_x..=biggest_x {
+        for y in smallest_y..=biggest_y {
+            answer.num_bb_pixels_consider += 1;
+            let p = Vec2::new(x as f32, y as f32);
+
+            let alpha = signed_triangle_area(p, b.xy(), c.xy()) / total_area;
+            if alpha < 0.0 {
+                continue;
+            }
+
+            let beta = signed_triangle_area(p, c.xy(), a.xy()) / total_area;
+            if beta < 0.0 {
+                continue;
+            }
+
+            let gamma = signed_triangle_area(p, a.xy(), b.xy()) / total_area;
+            if gamma < 0.0 {
+                continue;
+            }
+
+            let z = alpha * a.z + beta * b.z + gamma * c.z;
+            let z = z / 2. + 0.5;
+            // assert!(z >= 0.);
+            // assert!(z <= 1.);
+            answer.num_triangle_pixels_consider += 1;
+            if x >= 0 && x < width as i32 && y >= 0 && y < height as i32 {
+                answer.num_in_bounds_triangle_pixels_considered += 1;
+                let x = x as usize;
+                let y = y as usize;
+                if z < depths.get(x, y) {
+                    depths.set(x, y, z);
+                    answer.num_depth_buffer_sets += 1;
+                    let ambient_intensity = 0.3;
+
+                    let color = match lighting {
+                        None => coloru8(255, 255, 255),
+                        Some(ForLighting {
+                            light_dir,
+                            world_coords,
+                            na,
+                            nb,
+                            nc,
+                        }) => {
+                            let normal = alpha * na + beta * nb + gamma * nc;
+                            let dir_intensity = normal.dot(-light_dir).clamp(0., 1.);
+                            let dir_intensity = (dir_intensity * 6.).round() / 6.;
+                            let dir_intensity = dir_intensity * (1. - ambient_intensity);
+
+                            let total_intensity = ambient_intensity + dir_intensity;
+                            let mut color = vec3(255., 155., 0.) * total_intensity;
+
+                            if let Some(shadow_args) = shadow {
+                                assert!(shadow_args.light_pov_depths.width() == width);
+                                let this_pixel_world_coords = alpha * world_coords[0]
+                                    + beta * world_coords[1]
+                                    + gamma * world_coords[2];
+
+                                let this_pixel_clip_coords =
+                                    shadow_args.light_vp * this_pixel_world_coords;
+                                let this_pixel_ndc = perspective_divided(this_pixel_clip_coords);
+                                let this_pixel_screen_coords =
+                                    (shadow_args.light_viewport * this_pixel_ndc).xyz();
+                                let p = this_pixel_screen_coords
+                                    .with_z(this_pixel_screen_coords.z / 2. + 0.5);
+
+                                if (p.x as i32) >= 0
+                                    && (p.y as i32) >= 0
+                                    && (p.x as usize) < width
+                                    && (p.y as usize) < height
+                                {
+                                    let light_pov_best_z = shadow_args
+                                        .light_pov_depths
+                                        .get(p.x as usize, p.y as usize);
+                                    if p.z < light_pov_best_z + 0.005 {
+                                        // do nothing; we're in light
+                                    } else {
+                                        let total_intensity = ambient_intensity;
+                                        color = vec3(255., 155., 0.) * total_intensity;
+                                        // color = vec3(255., 0., 0.);
+                                    }
+                                }
+                            }
+
+                            color.as_u8vec3()
+                        }
+                    };
+
+                    if let Some(image) = image {
+                        image.set(x, y, color);
+                        answer.num_pixels_drawn += 1
+                    }
+                }
+            }
+        }
+    }
+
+    answer
+}
+
 impl World {
     fn new(args: &Args) -> Self {
         let mut objects = Vec::new();
@@ -789,145 +928,6 @@ fn linevf32(a: Vec2, b: Vec2, image: &mut Image, color: Color) -> RenderingResul
 fn signed_triangle_area(a: Vec2, b: Vec2, c: Vec2) -> f32 {
     let answer = (b.y - a.y) * (b.x + a.x) + (c.y - b.y) * (c.x + b.x) + (a.y - c.y) * (a.x + c.x);
     0.5 * answer
-}
-
-struct ForLighting {
-    light_dir: Vec4,
-    world_coords: [Vec4; 3],
-    na: Vec4,
-    nb: Vec4,
-    nc: Vec4,
-}
-
-fn triangle(
-    a: Vec3,
-    b: Vec3,
-    c: Vec3,
-    lighting: Option<ForLighting>,
-    image: &mut Option<&mut Image>,
-    depths: &mut DepthBuffer,
-    shadow: &Option<ShadowMappingArgs>,
-) -> RenderingResult {
-    let mut answer = RenderingResult::new();
-    answer.num_unclipped_triangles_considered += 1;
-
-    let width = depths.width();
-    let height = depths.height();
-
-    let smallest_x = f32::min(a.x, f32::min(b.x, c.x)) as i32;
-    let smallest_y = f32::min(a.y, f32::min(b.y, c.y)) as i32;
-    let biggest_x = f32::max(a.x, f32::max(b.x, c.x)) as i32;
-    let biggest_y = f32::max(a.y, f32::max(b.y, c.y)) as i32;
-
-    let smallest_x = i32::max(smallest_x, 0);
-    let smallest_y = i32::max(smallest_y, 0);
-    let biggest_x = i32::min(biggest_x, width as i32 - 1);
-    let biggest_y = i32::min(biggest_y, height as i32 - 1);
-
-    if smallest_x > biggest_x || smallest_y > biggest_y {
-        return answer;
-    }
-
-    answer.num_triangles_with_onscreen_bb += 1;
-    let total_area = signed_triangle_area(a.xy(), b.xy(), c.xy());
-
-    for x in smallest_x..=biggest_x {
-        for y in smallest_y..=biggest_y {
-            answer.num_bb_pixels_consider += 1;
-            let p = Vec2::new(x as f32, y as f32);
-
-            let alpha = signed_triangle_area(p, b.xy(), c.xy()) / total_area;
-            if alpha < 0.0 {
-                continue;
-            }
-
-            let beta = signed_triangle_area(p, c.xy(), a.xy()) / total_area;
-            if beta < 0.0 {
-                continue;
-            }
-
-            let gamma = signed_triangle_area(p, a.xy(), b.xy()) / total_area;
-            if gamma < 0.0 {
-                continue;
-            }
-
-            let z = alpha * a.z + beta * b.z + gamma * c.z;
-            let z = z / 2. + 0.5;
-            // assert!(z >= 0.);
-            // assert!(z <= 1.);
-            answer.num_triangle_pixels_consider += 1;
-            if x >= 0 && x < width as i32 && y >= 0 && y < height as i32 {
-                answer.num_in_bounds_triangle_pixels_considered += 1;
-                let x = x as usize;
-                let y = y as usize;
-                if z < depths.get(x, y) {
-                    depths.set(x, y, z);
-                    answer.num_depth_buffer_sets += 1;
-                    let ambient_intensity = 0.3;
-
-                    let color = match lighting {
-                        None => coloru8(255, 255, 255),
-                        Some(ForLighting {
-                            light_dir,
-                            world_coords,
-                            na,
-                            nb,
-                            nc,
-                        }) => {
-                            let normal = alpha * na + beta * nb + gamma * nc;
-                            let dir_intensity = normal.dot(-light_dir).clamp(0., 1.);
-                            let dir_intensity = (dir_intensity * 6.).round() / 6.;
-                            let dir_intensity = dir_intensity * (1. - ambient_intensity);
-
-                            let total_intensity = ambient_intensity + dir_intensity;
-                            let mut color = vec3(255., 155., 0.) * total_intensity;
-
-                            if let Some(shadow_args) = shadow {
-                                assert!(shadow_args.light_pov_depths.width() == width);
-                                let this_pixel_world_coords = alpha * world_coords[0]
-                                    + beta * world_coords[1]
-                                    + gamma * world_coords[2];
-
-                                let this_pixel_clip_coords =
-                                    shadow_args.light_vp * this_pixel_world_coords;
-                                let this_pixel_ndc = perspective_divided(this_pixel_clip_coords);
-                                let this_pixel_screen_coords =
-                                    (shadow_args.light_viewport * this_pixel_ndc).xyz();
-                                let p = this_pixel_screen_coords
-                                    .with_z(this_pixel_screen_coords.z / 2. + 0.5);
-
-                                if (p.x as i32) >= 0
-                                    && (p.y as i32) >= 0
-                                    && (p.x as usize) < width
-                                    && (p.y as usize) < height
-                                {
-                                    let light_pov_best_z = shadow_args
-                                        .light_pov_depths
-                                        .get(p.x as usize, p.y as usize);
-                                    if p.z < light_pov_best_z + 0.005 {
-                                        // do nothing; we're in light
-                                    } else {
-                                        let total_intensity = ambient_intensity;
-                                        color = vec3(255., 155., 0.) * total_intensity;
-                                        // color = vec3(255., 0., 0.);
-                                    }
-                                }
-                            }
-
-                            color.as_u8vec3()
-                        }
-                    };
-
-                    if let Some(image) = image {
-                        image.set(x, y, color);
-                        answer.num_pixels_drawn += 1
-                    }
-                }
-            }
-        }
-    }
-
-    answer
 }
 
 fn perspective_divided(v: Vec4) -> Vec4 {
