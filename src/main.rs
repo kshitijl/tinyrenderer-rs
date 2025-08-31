@@ -81,13 +81,7 @@ struct MovementSettings {
 struct RenderingUniforms {
     m_viewport: Mat4,
     m_projection: Mat4,
-    m_light_to_world: Mat4,
     m_view: Mat4,
-}
-
-enum PositionedLight {
-    None,
-    At(Vec3),
 }
 
 #[derive(Copy, Clone, PartialEq, Debug)]
@@ -135,29 +129,131 @@ impl Add for RenderingResult {
     }
 }
 
-struct ShadowMappingArgs<'buf> {
+struct BaryCoords(Vec3);
+
+struct NoopShaderColorsWhite {
+    //
+}
+
+impl NoopShaderColorsWhite {
+    fn new() -> Self {
+        Self {}
+    }
+
+    fn vertex_shader(&self, _coord: Vec4, _normal: Vec4) -> u32 {
+        1
+    }
+
+    fn fragment_shader(&self, _varyings: &[u32; 3], _b: BaryCoords) -> Color {
+        coloru8(255, 255, 255)
+    }
+}
+
+struct FinalRenderShaders<'buf> {
+    light_pos: Vec3,
     light_vp: Mat4,
     light_viewport: Mat4,
     light_pov_depths: &'buf DepthBuffer,
 }
 
-struct ForLighting {
-    light_dir: Vec4,
-    world_coords: [Vec4; 3],
-    na: Vec4,
-    nb: Vec4,
-    nc: Vec4,
+#[derive(Clone, Copy)]
+struct FinalRenderVarying {
+    world_coord: Vec4,
+    normal: Vec4,
 }
 
-fn triangle(
+impl<'buf> FinalRenderShaders<'buf> {
+    fn new(
+        light_pos: Vec3,
+        light_vp: Mat4,
+        light_viewport: Mat4,
+        light_pov_depths: &'buf DepthBuffer,
+    ) -> Self {
+        Self {
+            light_pos,
+            light_vp,
+            light_viewport,
+            light_pov_depths,
+        }
+    }
+
+    fn vertex_shader(&self, world_coord: Vec4, normal: Vec4) -> FinalRenderVarying {
+        FinalRenderVarying {
+            world_coord,
+            normal,
+        }
+    }
+
+    fn fragment_shader(&self, varyings: &[FinalRenderVarying; 3], b: BaryCoords) -> Color {
+        let (alpha, beta, gamma) = (b.0.x, b.0.y, b.0.z);
+        let ambient_intensity = 0.3;
+        let (na, nb, nc) = (varyings[0].normal, varyings[1].normal, varyings[2].normal);
+        let (wa, wb, wc) = (
+            varyings[0].world_coord,
+            varyings[1].world_coord,
+            varyings[2].world_coord,
+        );
+
+        let width = self.light_pov_depths.width();
+        let height = self.light_pov_depths.height();
+
+        let object_pos = alpha * wa + beta * wb + gamma * wc;
+
+        let light_dir = (object_pos - Vec4::from((self.light_pos, 1.))).normalize();
+        let m_light_to_world = Mat4::IDENTITY;
+        let transformed_light_dir = m_light_to_world * light_dir;
+
+        let normal = alpha * na + beta * nb + gamma * nc;
+        let dir_intensity = normal.dot(-transformed_light_dir).clamp(0., 1.);
+        let dir_intensity = (dir_intensity * 6.).round() / 6.;
+        let dir_intensity = dir_intensity * (1. - ambient_intensity);
+
+        let total_intensity = ambient_intensity + dir_intensity;
+        let mut color = vec3(255., 155., 0.) * total_intensity;
+
+        let this_pixel_world_coords = alpha * wa + beta * wb + gamma * wc;
+
+        let this_pixel_clip_coords = self.light_vp * this_pixel_world_coords;
+        let this_pixel_ndc = perspective_divided(this_pixel_clip_coords);
+        let this_pixel_screen_coords = (self.light_viewport * this_pixel_ndc).xyz();
+        let p = this_pixel_screen_coords.with_z(this_pixel_screen_coords.z / 2. + 0.5);
+
+        if (p.x as i32) >= 0
+            && (p.y as i32) >= 0
+            && (p.x as usize) < width
+            && (p.y as usize) < height
+        {
+            let light_pov_best_z = self.light_pov_depths.get(p.x as usize, p.y as usize);
+            if p.z < light_pov_best_z + 0.005 {
+                // do nothing; we're in light
+            } else {
+                let total_intensity = ambient_intensity;
+                color = vec3(255., 155., 0.) * total_intensity;
+            }
+        }
+
+        color.as_u8vec3()
+    }
+}
+
+/*
+We want there to be per-vertex data.
+We will interpolate it and pass it into the fragment shader
+OR
+we could pass in the barycentric coords. And let the frag shader do it.
+*/
+fn triangle<T, FS>(
     a: Vec3,
     b: Vec3,
     c: Vec3,
-    lighting: Option<ForLighting>,
+    varyings: &[T; 3],
+    f: &FS,
     image: &mut Option<&mut Image>,
     depths: &mut DepthBuffer,
-    shadow: &Option<ShadowMappingArgs>,
-) -> RenderingResult {
+) -> RenderingResult
+where
+    FS: Fn(&[T; 3], BaryCoords) -> Color,
+{
     let mut answer = RenderingResult::new();
     answer.num_unclipped_triangles_considered += 1;
 
@@ -213,62 +309,9 @@ fn triangle(
                 if z < depths.get(x, y) {
                     depths.set(x, y, z);
                     answer.num_depth_buffer_sets += 1;
-                    let ambient_intensity = 0.3;
-
-                    let color = match lighting {
-                        None => coloru8(255, 255, 255),
-                        Some(ForLighting {
-                            light_dir,
-                            world_coords,
-                            na,
-                            nb,
-                            nc,
-                        }) => {
-                            let normal = alpha * na + beta * nb + gamma * nc;
-                            let dir_intensity = normal.dot(-light_dir).clamp(0., 1.);
-                            let dir_intensity = (dir_intensity * 6.).round() / 6.;
-                            let dir_intensity = dir_intensity * (1. - ambient_intensity);
-
-                            let total_intensity = ambient_intensity + dir_intensity;
-                            let mut color = vec3(255., 155., 0.) * total_intensity;
-
-                            if let Some(shadow_args) = shadow {
-                                assert!(shadow_args.light_pov_depths.width() == width);
-                                let this_pixel_world_coords = alpha * world_coords[0]
-                                    + beta * world_coords[1]
-                                    + gamma * world_coords[2];
-
-                                let this_pixel_clip_coords =
-                                    shadow_args.light_vp * this_pixel_world_coords;
-                                let this_pixel_ndc = perspective_divided(this_pixel_clip_coords);
-                                let this_pixel_screen_coords =
-                                    (shadow_args.light_viewport * this_pixel_ndc).xyz();
-                                let p = this_pixel_screen_coords
-                                    .with_z(this_pixel_screen_coords.z / 2. + 0.5);
-
-                                if (p.x as i32) >= 0
-                                    && (p.y as i32) >= 0
-                                    && (p.x as usize) < width
-                                    && (p.y as usize) < height
-                                {
-                                    let light_pov_best_z = shadow_args
-                                        .light_pov_depths
-                                        .get(p.x as usize, p.y as usize);
-                                    if p.z < light_pov_best_z + 0.005 {
-                                        // do nothing; we're in light
-                                    } else {
-                                        let total_intensity = ambient_intensity;
-                                        color = vec3(255., 155., 0.) * total_intensity;
-                                        // color = vec3(255., 0., 0.);
-                                    }
-                                }
-                            }
-
-                            color.as_u8vec3()
-                        }
-                    };
 
                     if let Some(image) = image {
+                        let color = f(varyings, BaryCoords(vec3(alpha, beta, gamma)));
                         image.set(x, y, color);
                         answer.num_pixels_drawn += 1
                     }
@@ -455,21 +498,25 @@ impl World {
         self.first_pressed_this_frame.clear();
     }
 
-    fn render_object(
+    fn render_object<T, FS, VS>(
         object: &Object,
         uniforms: &RenderingUniforms,
-        light: &PositionedLight,
         image: &mut Option<&mut Image>,
         depths: &mut DepthBuffer,
         render_settings: &RenderSettings,
-        shadow: &Option<ShadowMappingArgs>,
-    ) -> RenderingResult {
+        vertex_shader: &VS,
+        fragment_shader: &FS,
+    ) -> RenderingResult
+    where
+        T: Copy,
+        VS: Fn(Vec4, Vec4) -> T,
+        FS: Fn(&[T; 3], BaryCoords) -> Color,
+    {
         let mut answer = RenderingResult::new();
 
         let RenderingUniforms {
             m_viewport,
             m_projection,
-            m_light_to_world,
             m_view,
         } = uniforms;
 
@@ -485,6 +532,7 @@ impl World {
         for face_idx in 0..object.mesh.num_faces() {
             let mut screen_coords: [Vec3; 3] = [Vec3::new(0., 0., 0.); 3];
             let mut world_coords: [Vec4; 3] = [Vec4::ZERO; 3];
+            let mut varyings: Vec<T> = Vec::new(); // TODO make this an array
             let mut clipped_verts: i32 = 0;
 
             for j in 0..3 {
@@ -516,46 +564,28 @@ impl World {
             }
 
             if !render_settings.no_triangles {
-                let lighting = match light {
-                    PositionedLight::None => None,
-                    PositionedLight::At(light_pos) => {
-                        // We're going to do lighting by dot-producting the light direction
-                        // and normals, so it's really THOSE two that need to be transformed
-                        // with respect to each other. It's also very important that we
-                        // not normalize or xyz the normals and lighting vectors! Those are
-                        // non-linear transforms and break the proof that transforming by
-                        // the transpose of the inverse preserves dot products.
-                        let mut normals = Vec::new();
-                        for i in 0..3 {
-                            let normal = object.mesh.normal(face_idx, i);
-                            let normal = m_normal * Vec4::from((normal, 0.));
-                            normals.push(normal);
-                        }
-                        let light_dir = (Vec4::from((object.pos, 1.0))
-                            - Vec4::from((*light_pos, 1.)))
-                        .normalize();
-                        let transformed_light_dir = m_light_to_world * light_dir;
-
-                        let lighting = ForLighting {
-                            light_dir: transformed_light_dir,
-                            world_coords,
-                            na: normals[0],
-                            nb: normals[1],
-                            nc: normals[2],
-                        };
-
-                        Some(lighting)
-                    }
-                };
+                // We're going to do lighting by dot-producting the light direction
+                // and normals, so it's really THOSE two that need to be transformed
+                // with respect to each other. It's also very important that we
+                // not normalize or xyz the normals and lighting vectors! Those are
+                // non-linear transforms and break the proof that transforming by
+                // the transpose of the inverse preserves dot products.
+                let mut normals = Vec::new();
+                for i in 0..3 {
+                    let normal = object.mesh.normal(face_idx, i);
+                    let normal = m_normal * Vec4::from((normal, 0.));
+                    varyings.push(vertex_shader(world_coords[i], normal));
+                    normals.push(normal);
+                }
 
                 let triangle_result = triangle(
                     screen_coords[0],
                     screen_coords[1],
                     screen_coords[2],
-                    lighting,
+                    &[varyings[0], varyings[1], varyings[2]],
+                    fragment_shader,
                     image,
                     depths,
-                    shadow,
                 );
 
                 answer = answer + triangle_result;
@@ -588,10 +618,11 @@ impl World {
         let z_near = 1.;
         let z_far = 50.;
         let m_projection_light = Mat4::perspective_rh_gl(f32::to_radians(60.), 1.0, z_near, z_far);
-        let m_light_to_world = Mat4::IDENTITY;
 
         let m_viewport = Mat4::from_scale(Vec3::new(canvas_size / 2.0, canvas_size / 2.0, 1.))
             * Mat4::from_translation(Vec3::new(1.0, 1.0, 0.0));
+
+        let light_pov = NoopShaderColorsWhite::new();
 
         // First from the light's POV
         let m_light_view = Mat4::look_at_rh(self.light.pos, self.objects[0].pos, self.camera.up);
@@ -600,17 +631,16 @@ impl World {
             m_viewport,
             m_projection: m_projection_light,
             m_view: m_light_view,
-            m_light_to_world,
         };
         for object in self.objects.iter() {
             let light_pov_rendering_result = Self::render_object(
                 object,
                 &light_uniforms,
-                &PositionedLight::At(self.light.pos),
                 &mut None,
                 &mut self.light_depths,
                 &self.render_settings,
-                &None,
+                &|w, n| light_pov.vertex_shader(w, n),
+                &|v, b| light_pov.fragment_shader(v, b),
             );
             answer = answer + light_pov_rendering_result;
         }
@@ -622,40 +652,40 @@ impl World {
             m_viewport,
             m_projection: m_projection_objects,
             m_view,
-            m_light_to_world,
-        };
-
-        let shadow_args = ShadowMappingArgs {
-            light_vp: light_uniforms.m_projection * light_uniforms.m_view,
-            light_viewport: light_uniforms.m_viewport,
-            light_pov_depths: &self.light_depths,
         };
 
         if self.render_settings.draw_lightbulb {
+            let lightbulb_shader = NoopShaderColorsWhite::new();
             answer = answer
                 + Self::render_object(
                     &self.light,
                     &uniforms,
-                    &PositionedLight::None,
                     &mut Some(&mut self.image),
                     &mut self.depths,
                     &self.render_settings,
-                    &None,
+                    &|w, n| lightbulb_shader.vertex_shader(w, n),
+                    &|v, b| lightbulb_shader.fragment_shader(v, b),
                 );
         }
 
-        let some_shadow_args = Some(shadow_args);
+        // Now the final render
+        let final_render = FinalRenderShaders::new(
+            self.light.pos,
+            light_uniforms.m_projection * light_uniforms.m_view,
+            light_uniforms.m_viewport,
+            &self.light_depths,
+        );
 
         for object in self.objects.iter() {
             answer = answer
                 + Self::render_object(
                     object,
                     &uniforms,
-                    &PositionedLight::At(self.light.pos),
                     &mut Some(&mut self.image),
                     &mut self.depths,
                     &self.render_settings,
-                    &some_shadow_args,
+                    &|w, n| final_render.vertex_shader(w, n),
+                    &|v, b| final_render.fragment_shader(v, b),
                 );
         }
 
