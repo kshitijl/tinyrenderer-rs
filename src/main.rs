@@ -447,8 +447,8 @@ impl World {
         let canvas_size = self.width as f32;
 
         let z_near = 1.;
-        let z_far = 24.;
-        let m_projection = Mat4::perspective_rh_gl(f32::to_radians(60.), 1.0, z_near, z_far);
+        let z_far = 50.;
+        let m_projection_light = Mat4::perspective_rh_gl(f32::to_radians(60.), 1.0, z_near, z_far);
         let m_light_to_world = Mat4::IDENTITY;
 
         let m_viewport = Mat4::from_scale(Vec3::new(canvas_size / 2.0, canvas_size / 2.0, 1.))
@@ -459,7 +459,7 @@ impl World {
 
         let light_uniforms = RenderingUniforms {
             m_viewport,
-            m_projection,
+            m_projection: m_projection_light,
             m_view: m_light_view,
             m_light_to_world,
         };
@@ -476,10 +476,12 @@ impl World {
             answer = answer + light_pov_rendering_result;
         }
 
+        let m_projection_objects = m_projection_light;
+
         let m_view = Mat4::look_to_rh(self.camera.pos, self.camera.dir, self.camera.up);
         let uniforms = RenderingUniforms {
             m_viewport,
-            m_projection,
+            m_projection: m_projection_objects,
             m_view,
             m_light_to_world,
         };
