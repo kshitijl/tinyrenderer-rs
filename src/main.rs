@@ -179,6 +179,8 @@ impl World {
             x += 2.;
         }
 
+        objects[0].scale = 3.;
+
         let image = Image::new(args.canvas_size, args.canvas_size);
         let depths = DepthBuffer::new(args.canvas_size, args.canvas_size);
         let light_depths = DepthBuffer::new(args.canvas_size, args.canvas_size);
@@ -339,7 +341,7 @@ impl World {
 
         let m_mvp = m_projection * m_view * m_model;
 
-        let m_normal = m_model.inverse().transpose();
+        let m_normal = (m_trans * m_rot).inverse().transpose();
 
         for face_idx in 0..object.mesh.num_faces() {
             let mut screen_coords: [Vec3; 3] = [Vec3::new(0., 0., 0.); 3];
@@ -445,7 +447,7 @@ impl World {
         let canvas_size = self.width as f32;
 
         let z_near = 1.;
-        let z_far = 12.;
+        let z_far = 24.;
         let m_projection = Mat4::perspective_rh_gl(f32::to_radians(60.), 1.0, z_near, z_far);
         let m_light_to_world = Mat4::IDENTITY;
 
@@ -936,7 +938,7 @@ struct Args {
     models: Vec<String>,
 
     /// Output image size in pixels. We only do square images for now.
-    #[arg(short, long, default_value_t = 320)]
+    #[arg(short, long, default_value_t = 480)]
     canvas_size: u16,
 }
 
