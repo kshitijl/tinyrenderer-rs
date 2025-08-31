@@ -570,12 +570,10 @@ impl World {
                 // not normalize or xyz the normals and lighting vectors! Those are
                 // non-linear transforms and break the proof that transforming by
                 // the transpose of the inverse preserves dot products.
-                let mut normals = Vec::new();
                 for i in 0..3 {
                     let normal = object.mesh.normal(face_idx, i);
                     let normal = m_normal * Vec4::from((normal, 0.));
                     varyings.push(vertex_shader(world_coords[i], normal));
-                    normals.push(normal);
                 }
 
                 let triangle_result = triangle(
