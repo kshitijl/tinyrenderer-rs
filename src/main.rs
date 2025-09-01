@@ -86,12 +86,12 @@ struct RenderingUniforms {
 
 #[derive(Copy, Clone, PartialEq, Debug)]
 struct RenderingResult {
-    num_triangles_with_onscreen_bb: u32,
+    num_bb_pixels_considered: u32,
     num_pixels_drawn: u32,
+    num_triangle_pixels_considered: u32,
+    num_triangles_with_onscreen_bb: u32,
     num_in_bounds_triangle_pixels_considered: u32,
     num_depth_buffer_sets: u32,
-    num_triangle_pixels_consider: u32,
-    num_bb_pixels_consider: u32,
     num_unclipped_triangles_considered: u32,
 }
 
@@ -102,8 +102,8 @@ impl RenderingResult {
             num_pixels_drawn: 0,
             num_in_bounds_triangle_pixels_considered: 0,
             num_depth_buffer_sets: 0,
-            num_triangle_pixels_consider: 0,
-            num_bb_pixels_consider: 0,
+            num_triangle_pixels_considered: 0,
+            num_bb_pixels_considered: 0,
             num_unclipped_triangles_considered: 0,
         }
     }
@@ -120,9 +120,10 @@ impl Add for RenderingResult {
             num_in_bounds_triangle_pixels_considered: self.num_in_bounds_triangle_pixels_considered
                 + other.num_in_bounds_triangle_pixels_considered,
             num_depth_buffer_sets: self.num_depth_buffer_sets + other.num_depth_buffer_sets,
-            num_triangle_pixels_consider: self.num_triangle_pixels_consider
-                + other.num_triangle_pixels_consider,
-            num_bb_pixels_consider: self.num_bb_pixels_consider + other.num_bb_pixels_consider,
+            num_triangle_pixels_considered: self.num_triangle_pixels_considered
+                + other.num_triangle_pixels_considered,
+            num_bb_pixels_considered: self.num_bb_pixels_considered
+                + other.num_bb_pixels_considered,
             num_unclipped_triangles_considered: self.num_unclipped_triangles_considered
                 + other.num_unclipped_triangles_considered,
         }
@@ -276,10 +277,13 @@ where
 
     answer.num_triangles_with_onscreen_bb += 1;
     let total_area = signed_triangle_area(a.xy(), b.xy(), c.xy());
+    if total_area <= 0. {
+        return answer;
+    }
 
     for x in smallest_x..=biggest_x {
         for y in smallest_y..=biggest_y {
-            answer.num_bb_pixels_consider += 1;
+            answer.num_bb_pixels_considered += 1;
             let p = Vec2::new(x as f32, y as f32);
 
             let alpha = signed_triangle_area(p, b.xy(), c.xy()) / total_area;
@@ -301,7 +305,7 @@ where
             let z = z / 2. + 0.5;
             // assert!(z >= 0.);
             // assert!(z <= 1.);
-            answer.num_triangle_pixels_consider += 1;
+            answer.num_triangle_pixels_considered += 1;
             if x >= 0 && x < width as i32 && y >= 0 && y < height as i32 {
                 answer.num_in_bounds_triangle_pixels_considered += 1;
                 let x = x as usize;
