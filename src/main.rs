@@ -86,6 +86,7 @@ struct RenderingUniforms {
 
 #[derive(Copy, Clone, PartialEq, Debug)]
 struct RenderingResult {
+    num_objects_bb_culled: u32,
     num_bb_pixels_considered: u32,
     num_pixels_drawn: u32,
     num_triangle_pixels_considered: u32,
@@ -98,6 +99,7 @@ struct RenderingResult {
 impl RenderingResult {
     fn new() -> Self {
         Self {
+            num_objects_bb_culled: 0,
             num_triangles_with_onscreen_bb: 0,
             num_pixels_drawn: 0,
             num_in_bounds_triangle_pixels_considered: 0,
@@ -126,6 +128,7 @@ impl Add for RenderingResult {
                 + other.num_bb_pixels_considered,
             num_unclipped_triangles_considered: self.num_unclipped_triangles_considered
                 + other.num_unclipped_triangles_considered,
+            num_objects_bb_culled: self.num_objects_bb_culled + other.num_objects_bb_culled,
         }
     }
 }
@@ -325,6 +328,20 @@ where
     }
 
     answer
+}
+
+fn should_clip(clip_coordinates: &Vec4) -> bool {
+    let w = clip_coordinates.w;
+    if clip_coordinates.x < -w
+        || clip_coordinates.x > w
+        || clip_coordinates.y < -w
+        || clip_coordinates.y > w
+        || clip_coordinates.z < -w
+        || clip_coordinates.z > w
+    {
+        return true;
+    }
+    return false;
 }
 
 impl World {
@@ -531,6 +548,21 @@ impl World {
 
         let m_mvp = m_projection * m_view * m_model;
 
+        {
+            let mut clipped_verts = 0;
+            for bb_vert in object.mesh.bounding_box_coords() {
+                let clip_coordinates = m_mvp * *bb_vert;
+                if should_clip(&clip_coordinates) {
+                    clipped_verts += 1;
+                }
+            }
+
+            if clipped_verts == 8 {
+                answer.num_objects_bb_culled += 1;
+                return answer;
+            }
+        }
+
         let m_normal = (m_trans * m_rot).inverse().transpose();
 
         for face_idx in 0..object.mesh.num_faces() {
@@ -545,14 +577,7 @@ impl World {
 
                 let clip_coordinates = m_mvp * model_coordinates;
 
-                let w = clip_coordinates.w;
-                if clip_coordinates.x < -w
-                    || clip_coordinates.x > w
-                    || clip_coordinates.y < -w
-                    || clip_coordinates.y > w
-                    || clip_coordinates.z < -w
-                    || clip_coordinates.z > w
-                {
+                if should_clip(&clip_coordinates) {
                     clipped_verts += 1;
                 }
 

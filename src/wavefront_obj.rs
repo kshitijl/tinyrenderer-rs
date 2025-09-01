@@ -1,4 +1,4 @@
-use glam::{Mat4, Vec3, Vec4, Vec4Swizzles, vec3};
+use glam::{Mat4, Vec3, Vec4, Vec4Swizzles, vec3, vec4};
 use nom::{
     IResult, Parser,
     branch::alt,
@@ -23,10 +23,20 @@ pub struct Mesh {
     vertices: Vec<Vec3>,
     faces: Vec<Face>,
     normals: Vec<Vec3>,
+    bounding_box: (Vec3, Vec3),
+    bounding_box_coords: [Vec4; 8],
 }
 
 impl Mesh {
     pub fn bounding_box(&self) -> (Vec3, Vec3) {
+        self.bounding_box
+    }
+
+    pub fn bounding_box_coords(&self) -> &[Vec4; 8] {
+        &self.bounding_box_coords
+    }
+
+    fn recompute_bb(&mut self) {
         let mut min = self.vertices[0];
         let mut max = self.vertices[0];
 
@@ -40,7 +50,17 @@ impl Mesh {
             max.z = f32::max(max.z, vertex.z);
         }
 
-        (min, max)
+        self.bounding_box = (min, max);
+
+        let mut idx = 0;
+        for x in [min.x, max.x] {
+            for y in [min.y, max.y] {
+                for z in [min.z, max.z] {
+                    self.bounding_box_coords[idx] = vec4(x, y, z, 1.0);
+                    idx += 1;
+                }
+            }
+        }
     }
 
     pub fn scale(&self) -> f32 {
@@ -62,6 +82,8 @@ impl Mesh {
         for vertex in self.vertices.iter_mut() {
             *vertex = (m_transform * Vec4::from((*vertex, 1.0))).xyz();
         }
+
+        self.recompute_bb();
     }
     pub fn num_faces(&self) -> usize {
         self.faces.len()
@@ -112,11 +134,16 @@ impl Mesh {
             }
         }
 
-        Ok(Self {
+        let mut answer = Self {
             vertices,
             normals,
             faces,
-        })
+            bounding_box: (Vec3::ZERO, Vec3::ZERO),
+            bounding_box_coords: [Vec4::ZERO; 8],
+        };
+        answer.recompute_bb();
+
+        Ok(answer)
     }
 }
 
