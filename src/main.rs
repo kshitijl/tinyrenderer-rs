@@ -401,15 +401,22 @@ impl World {
             for j in 0..10 {
                 objects.push(Object {
                     mesh: Mesh::wall(),
-                    pos: objects[0].pos + vec3(-5. + i as f32, -5. + j as f32, -6.),
+                    pos: objects[0].pos + vec3(-5. + i as f32, -5. + j as f32, -5.),
                     angle_y: 0.,
                     scale: 1.,
                 });
 
                 objects.push(Object {
                     mesh: Mesh::wall(),
-                    pos: objects[0].pos + vec3(-5. + i as f32, -5. + j as f32, -2.),
+                    pos: objects[0].pos + vec3(-5. + i as f32, -5. + j as f32, 4.),
                     angle_y: 180f32.to_radians(),
+                    scale: 1.,
+                });
+
+                objects.push(Object {
+                    mesh: Mesh::wall(),
+                    pos: objects[0].pos + vec3(4., -5. + j as f32, -5. + i as f32),
+                    angle_y: -90f32.to_radians(),
                     scale: 1.,
                 });
             }
