@@ -140,21 +140,32 @@ impl Add for RenderingResult {
 
 struct BaryCoords(Vec3);
 
+trait Shader {
+    type Varying: Copy;
+
+    fn vertex(&self, coord: Vec4, normal: Vec4) -> Self::Varying;
+    fn fragment(&self, varyings: &[Self::Varying; 3], b: BaryCoords) -> Color;
+}
+
 struct NoopShaderColorsWhite {
     //
+}
+
+impl Shader for NoopShaderColorsWhite {
+    type Varying = u32;
+
+    fn vertex(&self, _coord: Vec4, _normal: Vec4) -> u32 {
+        1
+    }
+
+    fn fragment(&self, _varyings: &[u32; 3], _b: BaryCoords) -> Color {
+        coloru8(255, 255, 255)
+    }
 }
 
 impl NoopShaderColorsWhite {
     fn new() -> Self {
         Self {}
-    }
-
-    fn vertex_shader(&self, _coord: Vec4, _normal: Vec4) -> u32 {
-        1
-    }
-
-    fn fragment_shader(&self, _varyings: &[u32; 3], _b: BaryCoords) -> Color {
-        coloru8(255, 255, 255)
     }
 }
 
@@ -171,29 +182,17 @@ struct FinalRenderVarying {
     normal: Vec4,
 }
 
-impl<'buf> FinalRenderShaders<'buf> {
-    fn new(
-        light_pos: Vec3,
-        light_vp: Mat4,
-        light_viewport: Mat4,
-        light_pov_depths: &'buf DepthBuffer,
-    ) -> Self {
-        Self {
-            light_pos,
-            light_vp,
-            light_viewport,
-            light_pov_depths,
-        }
-    }
+impl<'buf> Shader for FinalRenderShaders<'buf> {
+    type Varying = FinalRenderVarying;
 
-    fn vertex_shader(&self, world_coord: Vec4, normal: Vec4) -> FinalRenderVarying {
+    fn vertex(&self, world_coord: Vec4, normal: Vec4) -> FinalRenderVarying {
         FinalRenderVarying {
             world_coord,
             normal,
         }
     }
 
-    fn fragment_shader(&self, varyings: &[FinalRenderVarying; 3], b: BaryCoords) -> Color {
+    fn fragment(&self, varyings: &[FinalRenderVarying; 3], b: BaryCoords) -> Color {
         let (alpha, beta, gamma) = (b.0.x, b.0.y, b.0.z);
         let ambient_intensity = 0.3;
         let (na, nb, nc) = (varyings[0].normal, varyings[1].normal, varyings[2].normal);
@@ -245,23 +244,39 @@ impl<'buf> FinalRenderShaders<'buf> {
     }
 }
 
+impl<'buf> FinalRenderShaders<'buf> {
+    fn new(
+        light_pos: Vec3,
+        light_vp: Mat4,
+        light_viewport: Mat4,
+        light_pov_depths: &'buf DepthBuffer,
+    ) -> Self {
+        Self {
+            light_pos,
+            light_vp,
+            light_viewport,
+            light_pov_depths,
+        }
+    }
+}
+
 /*
 We want there to be per-vertex data.
 We will interpolate it and pass it into the fragment shader
 OR
 we could pass in the barycentric coords. And let the frag shader do it.
 */
-fn triangle<T, FS>(
+fn triangle<S>(
     a: Vec3,
     b: Vec3,
     c: Vec3,
-    varyings: &[T; 3],
-    f: &FS,
+    varyings: &[S::Varying; 3],
+    shader: &S,
     image: &mut Option<&mut Image>,
     depths: &mut DepthBuffer,
 ) -> RenderingResult
 where
-    FS: Fn(&[T; 3], BaryCoords) -> Color,
+    S: Shader,
 {
     let mut answer = RenderingResult::new();
     answer.num_unclipped_triangles_considered += 1;
@@ -323,7 +338,7 @@ where
                     answer.num_depth_buffer_sets += 1;
 
                     if let Some(image) = image {
-                        let color = f(varyings, BaryCoords(vec3(alpha, beta, gamma)));
+                        let color = shader.fragment(varyings, BaryCoords(vec3(alpha, beta, gamma)));
                         image.set(x, y, color);
                         answer.num_pixels_drawn += 1
                     }
@@ -346,7 +361,8 @@ fn should_clip(clip_coordinates: &Vec4) -> bool {
     {
         return true;
     }
-    return false;
+
+    false
 }
 
 impl World {
@@ -558,19 +574,16 @@ impl World {
         self.first_pressed_this_frame.clear();
     }
 
-    fn render_object<T, FS, VS>(
+    fn render_object<S>(
         object: &Object,
         uniforms: &RenderingUniforms,
         image: &mut Option<&mut Image>,
         depths: &mut DepthBuffer,
         render_settings: &RenderSettings,
-        vertex_shader: &VS,
-        fragment_shader: &FS,
+        shader: &S,
     ) -> RenderingResult
     where
-        T: Copy,
-        VS: Fn(Vec4, Vec4) -> T,
-        FS: Fn(&[T; 3], BaryCoords) -> Color,
+        S: Shader,
     {
         let mut answer = RenderingResult::new();
 
@@ -607,7 +620,7 @@ impl World {
         for face_idx in 0..object.mesh.num_faces() {
             let mut screen_coords: [Vec3; 3] = [Vec3::new(0., 0., 0.); 3];
             let mut world_coords: [Vec4; 3] = [Vec4::ZERO; 3];
-            let mut varyings: Vec<T> = Vec::new(); // TODO make this an array
+            let mut varyings: Vec<S::Varying> = Vec::new(); // TODO make this an array
             let mut clipped_verts: i32 = 0;
 
             for j in 0..3 {
@@ -641,7 +654,7 @@ impl World {
                 for i in 0..3 {
                     let normal = object.mesh.normal(face_idx, i);
                     let normal = m_normal * Vec4::from((normal, 0.));
-                    varyings.push(vertex_shader(world_coords[i], normal));
+                    varyings.push(shader.vertex(world_coords[i], normal));
                 }
 
                 let triangle_result = triangle(
@@ -649,7 +662,7 @@ impl World {
                     screen_coords[1],
                     screen_coords[2],
                     &[varyings[0], varyings[1], varyings[2]],
-                    fragment_shader,
+                    shader,
                     image,
                     depths,
                 );
@@ -705,8 +718,7 @@ impl World {
                 &mut None,
                 &mut self.light_depths,
                 &self.render_settings,
-                &|w, n| light_pov.vertex_shader(w, n),
-                &|v, b| light_pov.fragment_shader(v, b),
+                &light_pov,
             );
             answer = answer + light_pov_rendering_result;
         }
@@ -751,8 +763,7 @@ impl World {
                     &mut Some(&mut self.image),
                     &mut self.depths,
                     &self.render_settings,
-                    &|w, n| final_render.vertex_shader(w, n),
-                    &|v, b| final_render.fragment_shader(v, b),
+                    &final_render,
                 );
         }
 
