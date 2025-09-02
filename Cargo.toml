@@ -9,10 +9,13 @@ debug = "line-tables-only"
 [dependencies]
 clap = { version = "4.5.45", features = ["derive"] }
 env_logger = "0.11.8"
-error-iter = "0.4.1"
-glam = { version = "0.30.5", features = ["glam-assert"] }
+glam = { version = "0.30.5" }
 log = "0.4.27"
 nom = "8.0.0"
 pixels = "0.15.0"
 rand = "0.9.2"
 winit = "0.30.12"
+
+[features]
+default = []
+debug-asserts = ["glam/glam-assert"]
