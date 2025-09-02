@@ -405,6 +405,13 @@ impl World {
                     angle_y: 0.,
                     scale: 1.,
                 });
+
+                objects.push(Object {
+                    mesh: Mesh::wall(),
+                    pos: objects[0].pos + vec3(-5. + i as f32, -5. + j as f32, -2.),
+                    angle_y: 180f32.to_radians(),
+                    scale: 1.,
+                });
             }
         }
 
@@ -536,10 +543,6 @@ impl World {
         }
 
         let t = self.time_since_start.as_secs_f32();
-
-        //self.light.pos.x = 15. + 5. * f32::sin(1.0 * t);
-        // self.light.pos.y = 1.9 * f32::sin(1.0 * t);
-        // self.light.pos.z = 7. + f32::cos(1.9 * t);
 
         self.light.pos =
             self.camera.pos + vec3(0.1 * f32::sin(t), -0.6 + 0.1 * f32::cos(0.7 * t), -0.1);
