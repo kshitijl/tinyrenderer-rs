@@ -153,13 +153,11 @@ struct NoopShaderColorsWhite {
 }
 
 impl Shader for NoopShaderColorsWhite {
-    type Varying = u32;
+    type Varying = ();
 
-    fn vertex(&self, _coord: Vec4, _normal: Vec4) -> u32 {
-        1
-    }
+    fn vertex(&self, _coord: Vec4, _normal: Vec4) -> () {}
 
-    fn fragment(&self, _varyings: &[u32; 3], _b: BaryCoords) -> Color {
+    fn fragment(&self, _varyings: &[(); 3], _b: BaryCoords) -> Color {
         coloru8(255, 255, 255)
     }
 }
@@ -633,7 +631,6 @@ impl World {
         for face_idx in 0..object.mesh.num_faces() {
             let mut screen_coords: [Vec3; 3] = [Vec3::new(0., 0., 0.); 3];
             let mut world_coords: [Vec4; 3] = [Vec4::ZERO; 3];
-            let mut varyings: Vec<S::Varying> = Vec::new(); // TODO make this an array
             let mut clipped_verts: i32 = 0;
 
             for j in 0..3 {
@@ -656,19 +653,19 @@ impl World {
             if clipped_verts == 3 {
                 continue;
             }
-
             if !render_settings.no_triangles {
-                // We're going to do lighting by dot-producting the light direction
-                // and normals, so it's really THOSE two that need to be transformed
-                // with respect to each other. It's also very important that we
-                // not normalize or xyz the normals and lighting vectors! Those are
-                // non-linear transforms and break the proof that transforming by
-                // the transpose of the inverse preserves dot products.
-                for i in 0..3 {
+                let varyings: [S::Varying; 3] = core::array::from_fn(|i| {
+                    // We're going to do lighting by dot-producting the light direction
+                    // and normals, so it's really THOSE two that need to be transformed
+                    // with respect to each other. It's also very important that we
+                    // not normalize or xyz the normals and lighting vectors! Those are
+                    // non-linear transforms and break the proof that transforming by
+                    // the transpose of the inverse preserves dot products.
                     let normal = object.mesh.normal(face_idx, i);
                     let normal = m_normal * Vec4::from((normal, 0.));
-                    varyings.push(shader.vertex(world_coords[i], normal));
-                }
+
+                    shader.vertex(world_coords[i], normal)
+                });
 
                 let triangle_result = triangle(
                     screen_coords[0],
