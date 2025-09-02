@@ -500,11 +500,6 @@ impl World {
             self.camera.mouse_x,
             self.camera.mouse_y
         );
-        // let m = Mat3::from_rotation_y((-dx / 10.).to_radians() as f32);
-        // self.camera.dir = m * self.camera.dir;
-
-        // let m = Mat3::from_rotation_x((-dy / 10.).to_radians() as f32);
-        // self.camera.dir = m * self.camera.dir;
     }
 
     fn move_(&mut self, dir: Direction) {
