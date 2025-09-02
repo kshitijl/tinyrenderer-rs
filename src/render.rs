@@ -15,6 +15,8 @@ struct Camera {
     pos: Vec3,
     dir: Vec3,
     up: Vec3,
+    mouse_x: f32,
+    mouse_y: f32,
 }
 
 enum Direction {
@@ -30,6 +32,7 @@ struct Object {
     angle_x: f32,
     angle_y: f32,
     scale: f32,
+    color: Colorf,
 }
 
 struct Spotlight {
@@ -126,6 +129,9 @@ impl Add for RenderingResult {
 
 struct BaryCoords(Vec3);
 
+#[derive(Copy, Clone)]
+struct Colorf(Vec3);
+
 trait Shader {
     type Varying: Copy;
 
@@ -140,8 +146,10 @@ struct NoopShaderColorsWhite {
 impl Shader for NoopShaderColorsWhite {
     type Varying = ();
 
+    #[inline]
     fn vertex(&self, _coord: Vec4, _normal: Vec4) -> () {}
 
+    #[inline]
     fn fragment(&self, _varyings: &[(); 3], _b: BaryCoords) -> Color {
         coloru8(255, 255, 255)
     }
@@ -153,11 +161,13 @@ impl NoopShaderColorsWhite {
     }
 }
 
-struct FinalRenderShaders<'buf> {
+struct FinalRenderShader<'buf> {
     light_pos: Vec3,
     light_vp: Mat4,
     light_viewport: Mat4,
     light_pov_depths: &'buf DepthBuffer,
+
+    object_color: Colorf,
 }
 
 #[derive(Clone, Copy)]
@@ -166,7 +176,7 @@ struct FinalRenderVarying {
     normal: Vec4,
 }
 
-impl<'buf> Shader for FinalRenderShaders<'buf> {
+impl<'buf> Shader for FinalRenderShader<'buf> {
     type Varying = FinalRenderVarying;
 
     fn vertex(&self, world_coord: Vec4, normal: Vec4) -> FinalRenderVarying {
@@ -201,7 +211,7 @@ impl<'buf> Shader for FinalRenderShaders<'buf> {
         let dir_intensity = dir_intensity * (1. - ambient_intensity);
 
         let total_intensity = ambient_intensity + dir_intensity;
-        let mut color = vec3(255., 155., 0.) * total_intensity;
+        let mut color = self.object_color.0 * total_intensity;
 
         let this_pixel_world_coords = alpha * wa + beta * wb + gamma * wc;
 
@@ -220,15 +230,15 @@ impl<'buf> Shader for FinalRenderShaders<'buf> {
                 // do nothing; we're in light
             } else {
                 let total_intensity = ambient_intensity;
-                color = vec3(255., 155., 0.) * total_intensity;
+                color = self.object_color.0 * total_intensity;
             }
         }
 
-        color.as_u8vec3()
+        (color * 255.).as_u8vec3()
     }
 }
 
-impl<'buf> FinalRenderShaders<'buf> {
+impl<'buf> FinalRenderShader<'buf> {
     fn new(
         light_pos: Vec3,
         light_vp: Mat4,
@@ -240,16 +250,11 @@ impl<'buf> FinalRenderShaders<'buf> {
             light_vp,
             light_viewport,
             light_pov_depths,
+            object_color: Colorf(vec3(1., 1., 1.)),
         }
     }
 }
 
-/*
-We want there to be per-vertex data.
-We will interpolate it and pass it into the fragment shader
-OR
-we could pass in the barycentric coords. And let the frag shader do it.
-*/
 fn triangle<S>(
     a: Vec3,
     b: Vec3,
@@ -390,12 +395,15 @@ impl World {
                         angle_x: 0.,
                         angle_y: 0.,
                         scale: 1.,
+                        color: Colorf(vec3(1., 155. / 255., 0.)),
                     };
 
                     objects.push(object);
                 }
             }
         }
+
+        let wall_color = Colorf(vec3(0.5, 0.5, 0.5));
         for i in 0..10 {
             for j in 0..10 {
                 objects.push(Object {
@@ -404,6 +412,7 @@ impl World {
                     angle_x: 0.,
                     angle_y: 0.,
                     scale: 1.,
+                    color: wall_color,
                 });
 
                 objects.push(Object {
@@ -412,6 +421,7 @@ impl World {
                     angle_x: 0.,
                     angle_y: 180f32.to_radians(),
                     scale: 1.,
+                    color: wall_color,
                 });
 
                 objects.push(Object {
@@ -420,6 +430,7 @@ impl World {
                     angle_x: 0.,
                     angle_y: -90f32.to_radians(),
                     scale: 1.,
+                    color: wall_color,
                 });
 
                 objects.push(Object {
@@ -428,6 +439,7 @@ impl World {
                     angle_x: -90f32.to_radians(),
                     angle_y: 0.,
                     scale: 1.,
+                    color: wall_color,
                 });
             }
         }
@@ -461,6 +473,8 @@ impl World {
                 pos: initial_camera_pos,
                 dir: camera_dir,
                 up: vec3(0., 1., 0.).normalize(),
+                mouse_x: 0.,
+                mouse_y: 0.,
             },
             keys: HashSet::new(),
             first_pressed_this_frame: HashSet::new(),
@@ -475,16 +489,27 @@ impl World {
     }
 
     pub fn camera_mouse(&mut self, dx: f64, dy: f64) {
-        let m = Mat3::from_rotation_y((-dx / 10.).to_radians() as f32);
-        self.camera.dir = m * self.camera.dir;
+        let (dx, dy) = (dx as f32, dy as f32);
+        let scale = -1e-3;
+        self.camera.mouse_x += dx * scale;
+        self.camera.mouse_y += dy * scale;
+        log::info!(
+            "camera_mouse {} {} {} {}",
+            dx,
+            dy,
+            self.camera.mouse_x,
+            self.camera.mouse_y
+        );
+        // let m = Mat3::from_rotation_y((-dx / 10.).to_radians() as f32);
+        // self.camera.dir = m * self.camera.dir;
 
-        let m = Mat3::from_rotation_x((-dy / 10.).to_radians() as f32);
-        self.camera.dir = m * self.camera.dir;
+        // let m = Mat3::from_rotation_x((-dy / 10.).to_radians() as f32);
+        // self.camera.dir = m * self.camera.dir;
     }
 
     fn move_(&mut self, dir: Direction) {
         let speed = 0.1;
-        let forward = self.camera.dir.with_y(0.);
+        let forward = self.camera.dir.with_y(0.).normalize();
         let right = forward.cross(self.camera.up);
 
         match dir {
@@ -558,6 +583,10 @@ impl World {
                 object.angle_y = angle;
             }
         }
+
+        self.camera.dir = Mat3::from_rotation_y(self.camera.mouse_x)
+            * Mat3::from_rotation_x(self.camera.mouse_y)
+            * vec3(0., 0., -1.);
 
         let t = self.time_since_start.as_secs_f32();
 
@@ -741,7 +770,7 @@ impl World {
         // }
 
         // Now the final render
-        let final_render = FinalRenderShaders::new(
+        let mut final_render = FinalRenderShader::new(
             self.light.pos,
             light_uniforms.m_projection * light_uniforms.m_view,
             light_uniforms.m_viewport,
@@ -749,6 +778,7 @@ impl World {
         );
 
         for object in self.objects.iter() {
+            final_render.object_color = object.color;
             answer = answer
                 + Self::render_object(
                     object,
