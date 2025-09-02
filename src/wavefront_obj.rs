@@ -27,6 +27,8 @@ pub struct Mesh {
     bounding_box_coords: [Vec4; 8],
 }
 
+// TODO put mesh in its own file. wavefront obj is just the file format.
+
 impl Mesh {
     pub fn bounding_box(&self) -> (Vec3, Vec3) {
         self.bounding_box
@@ -34,6 +36,40 @@ impl Mesh {
 
     pub fn bounding_box_coords(&self) -> &[Vec4; 8] {
         &self.bounding_box_coords
+    }
+
+    pub fn wall() -> Self {
+        let vertices = vec![
+            vec3(0., 1., 0.),
+            vec3(1., 1., 0.),
+            vec3(0., 0., 0.),
+            vec3(1., 0., 0.),
+        ];
+
+        let normals = vec![vec3(0., 0., 1.)];
+
+        let faces = vec![
+            Face {
+                vertices: [2, 1, 0],
+                normals: [0, 0, 0],
+            },
+            Face {
+                vertices: [1, 2, 3],
+                normals: [0, 0, 0],
+            },
+        ];
+
+        let mut answer = Self {
+            vertices,
+            faces,
+            normals,
+
+            bounding_box: (Vec3::ZERO, Vec3::ZERO),
+            bounding_box_coords: [Vec4::ZERO; 8],
+        };
+        answer.recompute_bb();
+
+        answer
     }
 
     fn recompute_bb(&mut self) {

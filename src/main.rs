@@ -46,6 +46,11 @@ struct Object {
     scale: f32,
 }
 
+struct Spotlight {
+    pos: Vec3,
+    dir: Vec3,
+}
+
 struct World {
     render_settings: RenderSettings,
     movement_settings: MovementSettings,
@@ -57,7 +62,7 @@ struct World {
 
     camera: Camera,
 
-    light: Object,
+    light: Spotlight,
     objects: Vec<Object>,
 
     keys: HashSet<KeyCode>,
@@ -347,55 +352,75 @@ fn should_clip(clip_coordinates: &Vec4) -> bool {
 impl World {
     fn new(args: &Args) -> Self {
         let mut objects = Vec::new();
-        let mut x = -(args.models.len() as f32);
 
-        for model_filename in args.models.iter() {
-            let mut model = wavefront_obj::Mesh::from_file(model_filename.as_str()).unwrap();
+        let grid_size = 1;
+        let mut idx = 0;
+        for i in 0..grid_size {
+            for j in 0..grid_size {
+                for k in 0..grid_size {
+                    // if idx as f32 >= num_models {
+                    //     continue;
+                    // }
+                    let model_filename = &args.models[idx % args.models.len()];
+                    idx += 1;
 
-            let bb = model.bounding_box();
-            log::info!(
-                "Parsed model {} with {} vertices, {} faces, {} normals. Bounding box: {:?}. Scale: {}",
-                model_filename,
-                model.num_vertices(),
-                model.num_faces(),
-                model.num_normals(),
-                bb,
-                model.scale()
-            );
+                    let mut model =
+                        wavefront_obj::Mesh::from_file(model_filename.as_str()).unwrap();
 
-            model.normalize();
+                    let bb = model.bounding_box();
+                    log::info!(
+                        "Parsed model {} with {} vertices, {} faces, {} normals. Bounding box: {:?}. Scale: {}",
+                        model_filename,
+                        model.num_vertices(),
+                        model.num_faces(),
+                        model.num_normals(),
+                        bb,
+                        model.scale()
+                    );
 
-            log::info!(
-                "After normalization, bounding box is {:?} and scale is {}",
-                model.bounding_box(),
-                model.scale()
-            );
+                    model.normalize();
 
-            let object = Object {
-                mesh: model,
-                pos: vec3(x * 2., 0., 0.),
-                angle_y: 0.,
-                scale: 1.,
-            };
+                    log::info!(
+                        "After normalization, bounding box is {:?} and scale is {}",
+                        model.bounding_box(),
+                        model.scale()
+                    );
 
-            objects.push(object);
-            x += 2.;
+                    let object = Object {
+                        mesh: model,
+                        pos: vec3(i as f32 * 2., j as f32 * 3., k as f32 * 4.),
+                        angle_y: 0.,
+                        scale: 1.,
+                    };
+
+                    objects.push(object);
+                }
+            }
+        }
+        for i in 0..10 {
+            for j in 0..10 {
+                objects.push(Object {
+                    mesh: Mesh::wall(),
+                    pos: objects[0].pos + vec3(-5. + i as f32, -5. + j as f32, -6.),
+                    angle_y: 0.,
+                    scale: 1.,
+                });
+            }
         }
 
-        objects[0].scale = 3.;
+        // objects[0].scale = 3.;
 
         let image = Image::new(args.canvas_size, args.canvas_size);
         let depths = DepthBuffer::new(args.canvas_size, args.canvas_size);
         let light_depths = DepthBuffer::new(args.canvas_size, args.canvas_size);
 
-        let initial_camera_pos = vec3(3., 0., 1.);
-        let light = Object {
-            mesh: objects[0].mesh.clone(),
-            pos: initial_camera_pos,
-            angle_y: 0.,
-            scale: 0.3,
-        };
+        let initial_camera_pos = vec3(0., 0., 3.);
         let camera_dir = (objects[0].pos - initial_camera_pos).normalize();
+
+        let light = Spotlight {
+            pos: initial_camera_pos,
+            dir: camera_dir,
+        };
 
         Self {
             image,
@@ -503,18 +528,22 @@ impl World {
         }
 
         for (idx, object) in self.objects.iter_mut().enumerate() {
-            let angle = self.angle_time.as_secs_f32() * (idx as f32 + 1.);
+            if object.mesh.num_faces() > 10 {
+                let angle = self.angle_time.as_secs_f32() * (idx as f32 + 1.);
 
-            object.angle_y = angle;
+                object.angle_y = angle;
+            }
         }
 
-        if self.movement_settings.move_light_around {
-            let t = self.time_since_start.as_secs_f32();
+        let t = self.time_since_start.as_secs_f32();
 
-            //self.light.pos.x = 15. + 5. * f32::sin(1.0 * t);
-            self.light.pos.y = 1.9 * f32::sin(1.0 * t);
-            // self.light.pos.z = 7. + f32::cos(1.9 * t);
-        }
+        //self.light.pos.x = 15. + 5. * f32::sin(1.0 * t);
+        // self.light.pos.y = 1.9 * f32::sin(1.0 * t);
+        // self.light.pos.z = 7. + f32::cos(1.9 * t);
+
+        self.light.pos =
+            self.camera.pos + vec3(0.1 * f32::sin(t), -0.6 + 0.1 * f32::cos(0.7 * t), -0.1);
+        self.light.dir = self.camera.dir;
 
         self.first_pressed_this_frame.clear();
     }
@@ -644,7 +673,7 @@ impl World {
 
         let z_near = 1.;
         let z_far = 50.;
-        let m_projection_light = Mat4::perspective_rh_gl(f32::to_radians(60.), 1.0, z_near, z_far);
+        let m_projection_light = Mat4::perspective_rh_gl(f32::to_radians(70.), 1.0, z_near, z_far);
 
         let m_viewport = Mat4::from_scale(Vec3::new(canvas_size / 2.0, canvas_size / 2.0, 1.))
             * Mat4::from_translation(Vec3::new(1.0, 1.0, 0.0));
@@ -652,7 +681,7 @@ impl World {
         let light_pov = NoopShaderColorsWhite::new();
 
         // First from the light's POV
-        let m_light_view = Mat4::look_at_rh(self.light.pos, self.objects[0].pos, self.camera.up);
+        let m_light_view = Mat4::look_to_rh(self.light.pos, self.light.dir, self.camera.up);
 
         let light_uniforms = RenderingUniforms {
             m_viewport,
@@ -672,7 +701,8 @@ impl World {
             answer = answer + light_pov_rendering_result;
         }
 
-        let m_projection_objects = m_projection_light;
+        let m_projection_objects =
+            Mat4::perspective_rh_gl(f32::to_radians(60.), 1.0, z_near, z_far);
 
         let m_view = Mat4::look_to_rh(self.camera.pos, self.camera.dir, self.camera.up);
         let uniforms = RenderingUniforms {
@@ -681,19 +711,19 @@ impl World {
             m_view,
         };
 
-        if self.render_settings.draw_lightbulb {
-            let lightbulb_shader = NoopShaderColorsWhite::new();
-            answer = answer
-                + Self::render_object(
-                    &self.light,
-                    &uniforms,
-                    &mut Some(&mut self.image),
-                    &mut self.depths,
-                    &self.render_settings,
-                    &|w, n| lightbulb_shader.vertex_shader(w, n),
-                    &|v, b| lightbulb_shader.fragment_shader(v, b),
-                );
-        }
+        // if self.render_settings.draw_lightbulb {
+        //     let lightbulb_shader = NoopShaderColorsWhite::new();
+        //     answer = answer
+        //         + Self::render_object(
+        //             &self.light,
+        //             &uniforms,
+        //             &mut Some(&mut self.image),
+        //             &mut self.depths,
+        //             &self.render_settings,
+        //             &|w, n| lightbulb_shader.vertex_shader(w, n),
+        //             &|v, b| lightbulb_shader.fragment_shader(v, b),
+        //         );
+        // }
 
         // Now the final render
         let final_render = FinalRenderShaders::new(
@@ -997,7 +1027,7 @@ struct Args {
     models: Vec<String>,
 
     /// Output image size in pixels. We only do square images for now.
-    #[arg(short, long, default_value_t = 480)]
+    #[arg(short, long, default_value_t = 320)]
     canvas_size: u16,
 }
 
