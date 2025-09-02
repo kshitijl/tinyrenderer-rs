@@ -42,6 +42,7 @@ enum Direction {
 struct Object {
     mesh: Mesh,
     pos: Vec3,
+    angle_x: f32,
     angle_y: f32,
     scale: f32,
 }
@@ -299,7 +300,7 @@ where
     }
 
     answer.num_triangles_with_onscreen_bb += 1;
-    let total_area = signed_triangle_area(a.xy(), b.xy(), c.xy());
+    let total_area = signed_triangle_area(a, b, c);
     if total_area <= 0. {
         return answer;
     }
@@ -307,19 +308,19 @@ where
     for x in smallest_x..=biggest_x {
         for y in smallest_y..=biggest_y {
             answer.num_bb_pixels_considered += 1;
-            let p = Vec2::new(x as f32, y as f32);
+            let p = Vec3::new(x as f32, y as f32, 0.);
 
-            let alpha = signed_triangle_area(p, b.xy(), c.xy()) / total_area;
+            let alpha = signed_triangle_area(p, b, c) / total_area;
             if alpha < 0.0 {
                 continue;
             }
 
-            let beta = signed_triangle_area(p, c.xy(), a.xy()) / total_area;
+            let beta = signed_triangle_area(p, c, a) / total_area;
             if beta < 0.0 {
                 continue;
             }
 
-            let gamma = signed_triangle_area(p, a.xy(), b.xy()) / total_area;
+            let gamma = signed_triangle_area(p, a, b) / total_area;
             if gamma < 0.0 {
                 continue;
             }
@@ -405,6 +406,7 @@ impl World {
                     let object = Object {
                         mesh: model,
                         pos: vec3(i as f32 * 2., j as f32 * 3., k as f32 * 4.),
+                        angle_x: 0.,
                         angle_y: 0.,
                         scale: 1.,
                     };
@@ -418,13 +420,15 @@ impl World {
                 objects.push(Object {
                     mesh: Mesh::wall(),
                     pos: objects[0].pos + vec3(-5. + i as f32, -5. + j as f32, -5.),
+                    angle_x: 0.,
                     angle_y: 0.,
                     scale: 1.,
                 });
 
                 objects.push(Object {
                     mesh: Mesh::wall(),
-                    pos: objects[0].pos + vec3(-5. + i as f32, -5. + j as f32, 4.),
+                    pos: objects[0].pos + vec3(-4. + i as f32, -5. + j as f32, 4.),
+                    angle_x: 0.,
                     angle_y: 180f32.to_radians(),
                     scale: 1.,
                 });
@@ -432,7 +436,16 @@ impl World {
                 objects.push(Object {
                     mesh: Mesh::wall(),
                     pos: objects[0].pos + vec3(4., -5. + j as f32, -5. + i as f32),
+                    angle_x: 0.,
                     angle_y: -90f32.to_radians(),
+                    scale: 1.,
+                });
+
+                objects.push(Object {
+                    mesh: Mesh::wall(),
+                    pos: objects[0].pos + vec3(-5. + i as f32, -5., -4. + j as f32),
+                    angle_x: -90f32.to_radians(),
+                    angle_y: 0.,
                     scale: 1.,
                 });
             }
@@ -594,7 +607,7 @@ impl World {
         } = uniforms;
 
         let m_scale = Mat4::from_scale(vec3(object.scale, object.scale, object.scale));
-        let m_rot = Mat4::from_rotation_y(object.angle_y);
+        let m_rot = Mat4::from_rotation_y(object.angle_y) * Mat4::from_rotation_x(object.angle_x);
         let m_trans = Mat4::from_translation(object.pos);
         let m_model = m_trans * m_rot * m_scale;
 
@@ -1033,7 +1046,8 @@ fn linevf32(a: Vec2, b: Vec2, image: &mut Image, color: Color) -> RenderingResul
     linef32(a.x, a.y, b.x, b.y, image, color)
 }
 
-fn signed_triangle_area(a: Vec2, b: Vec2, c: Vec2) -> f32 {
+#[inline]
+fn signed_triangle_area(a: Vec3, b: Vec3, c: Vec3) -> f32 {
     let answer = (b.y - a.y) * (b.x + a.x) + (c.y - b.y) * (c.x + b.x) + (a.y - c.y) * (a.x + c.x);
     0.5 * answer
 }
