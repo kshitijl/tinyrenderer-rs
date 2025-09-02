@@ -56,7 +56,8 @@ impl ApplicationHandler for App {
                 self.world.width as u32,
                 surface_texture,
             ) {
-                Ok(pixels) => {
+                Ok(mut pixels) => {
+                    pixels.set_scaling_mode(pixels::ScalingMode::Fill);
                     window.request_redraw();
                     Some(pixels)
                 }
