@@ -1,9 +1,13 @@
-use glam::U8Vec3;
+use glam::{U8Vec4, Vec3};
 
-pub type Color = U8Vec3;
+pub type Color = U8Vec4;
 
 pub const fn coloru8(r: u8, g: u8, b: u8) -> Color {
-    U8Vec3::new(r, g, b)
+    U8Vec4::new(r, g, b, 255)
+}
+
+pub fn colorvf(c: Vec3) -> Color {
+    U8Vec4::new(c.x as u8, c.y as u8, c.z as u8, 255)
 }
 
 pub const RED: Color = coloru8(255, 0, 0);

@@ -234,7 +234,7 @@ impl<'buf> Shader for FinalRenderShader<'buf> {
             }
         }
 
-        (color * 255.).as_u8vec3()
+        colorvf(color * 255.)
     }
 }
 
