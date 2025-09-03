@@ -503,15 +503,9 @@ impl World {
     pub fn camera_mouse(&mut self, dx: f64, dy: f64) {
         let (dx, dy) = (dx as f32, dy as f32);
         let scale = -1e-3;
-        self.camera.mouse_x += dx * scale;
-        self.camera.mouse_y += dy * scale;
-        log::info!(
-            "camera_mouse {} {} {} {}",
-            dx,
-            dy,
-            self.camera.mouse_x,
-            self.camera.mouse_y
-        );
+        self.camera.mouse_x = (self.camera.mouse_x + dx * scale).rem_euclid(2. * f32::consts::PI);
+        self.camera.mouse_y =
+            (self.camera.mouse_y + dy * scale).clamp(-f32::consts::PI / 3., f32::consts::PI / 3.);
     }
 
     fn move_(&mut self, dir: Direction) {
