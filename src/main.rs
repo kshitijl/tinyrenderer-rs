@@ -183,8 +183,11 @@ impl ApplicationHandler for App {
 
 #[derive(Parser)]
 struct Args {
-    /// Model files
-    models: Vec<String>,
+    #[arg(short, long, default_value = "assets/head.obj")]
+    exhibit_model: String,
+
+    #[arg(short, long, default_value = "assets/turkey.obj")]
+    wall_model: String,
 
     /// Output image size in pixels. We only do square images for now.
     #[arg(short, long, default_value_t = 320)]

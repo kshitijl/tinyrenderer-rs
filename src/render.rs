@@ -40,48 +40,6 @@ struct Spotlight {
     dir: Vec3,
 }
 
-enum GridElem {
-    Wall,
-    Empty,
-    Exhibit,
-}
-
-struct FloorPlan {
-    width: usize,
-    height: usize,
-    grid: Vec<GridElem>,
-}
-
-impl FloorPlan {
-    // fn from_string(s: &str) -> Self {
-    //     let mut answer = Vec::new();
-    //     let mut width = 0;
-    //     let mut height = 0;
-
-    //     let unique_widths: HashSet<usize> = s.lines().map(|line| line.len()).collect();
-
-    //     if unique_widths.len() > 1 {
-    //         panic!("grid not rectangular")
-    //     }
-    //     for c in s.chars() {
-    //         let elem = match c {
-    //             'w' => Some(GridElem::Wall),
-    //             '.' => Some(GridElem::Empty),
-    //             'x' => Some(GridElem::Exhibit),
-    //             '\n' => None,
-    //             _ => panic!("unknown grid letter {}", c),
-    //         };
-    //         if let Some(e) = elem {
-    //             answe
-    //     }
-
-    //     Self {
-    //         width,
-    //         height,
-    //         grid: answer,
-    //     }
-    // }
-}
 pub struct World {
     render_settings: RenderSettings,
     movement_settings: MovementSettings,
@@ -451,53 +409,133 @@ pub enum ResolutionChangeAction {
     ChangeTo { x: u32, y: u32 },
 }
 
+#[derive(Copy, Clone, PartialEq)]
+enum GridElem {
+    Wall,
+    Empty,
+    Exhibit,
+}
+
+struct FloorPlan {
+    width: usize,
+    height: usize,
+    grid: Vec<GridElem>,
+}
+
+impl FloorPlan {
+    fn from_string(s: &str) -> Self {
+        let mut answer = Vec::new();
+        let s = s.trim();
+
+        let unique_widths: HashSet<usize> = s.lines().map(|line| line.len()).collect();
+
+        if unique_widths.len() > 1 {
+            panic!("grid not rectangular")
+        }
+        let width = *unique_widths.iter().next().unwrap();
+
+        for c in s.chars() {
+            let elem = match c {
+                'w' => Some(GridElem::Wall),
+                '.' => Some(GridElem::Empty),
+                'x' => Some(GridElem::Exhibit),
+                '\n' => None,
+                _ => panic!("unknown grid letter {}", c),
+            };
+            if let Some(e) = elem {
+                answer.push(e);
+            }
+        }
+
+        let height = answer.len() / width;
+
+        Self {
+            width,
+            height,
+            grid: answer,
+        }
+    }
+
+    fn to_world_coords(&self, grid_size: f32, x: usize, y: usize) -> Vec3 {
+        let pos = vec3(x as f32 * grid_size, -4., y as f32 * grid_size);
+        pos
+    }
+
+    fn at(&self, x: usize, y: usize) -> GridElem {
+        self.grid[y * self.width + x]
+    }
+
+    fn first_empty(&self) -> (usize, usize) {
+        for y in 0..self.height {
+            for x in 0..self.width {
+                if self.at(x, y) == GridElem::Empty {
+                    return (x, y);
+                }
+            }
+        }
+
+        panic!("no empty");
+    }
+}
+
 impl World {
     pub fn new(args: &Args) -> Self {
         let mut objects = Vec::new();
 
-        let grid_size = 1;
-        let mut idx = 0;
-        for i in 0..grid_size {
-            for j in 0..grid_size {
-                for k in 0..grid_size {
-                    // if idx as f32 >= num_models {
-                    //     continue;
-                    // }
-                    let model_filename = &args.models[idx % args.models.len()];
-                    idx += 1;
+        let g = FloorPlan::from_string(
+            r#"
+wwwwwwwww
+w...wwwww
+w.ww.wwww
+w.ww...ww
+w.ww...ww
+w.ww...ww
+w.......w
+w...x...w
+w.......w
+wwwwwwwww"#,
+        );
 
-                    let mut model = Mesh::from_file(model_filename.as_str()).unwrap();
+        let grid_size = 2.;
+        let wall_color = Colorf(vec3(0.5, 0.5, 0.5));
+        let exhibits_color = Colorf(vec3(1., 155. / 255., 0.));
 
-                    let bb = model.bounding_box();
-                    log::info!(
-                        "Parsed model {} with {} vertices, {} faces, {} normals. Bounding box: {:?}. Scale: {}",
-                        model_filename,
-                        model.num_vertices(),
-                        model.num_faces(),
-                        model.num_normals(),
-                        bb,
-                        model.scale()
-                    );
+        for x in 0..g.width {
+            for y in 0..g.height {
+                let mesh: Mesh;
+                let mut angle_x = 0.;
+                let object_color: Colorf;
+                let mut y_offset = 0.;
 
-                    model.normalize();
-
-                    log::info!(
-                        "After normalization, bounding box is {:?} and scale is {}",
-                        model.bounding_box(),
-                        model.scale()
-                    );
-
-                    let object = Object {
-                        mesh: model,
-                        pos: vec3(i as f32 * 2., j as f32 * 3., k as f32 * 4.),
-                        angle_x: 0.,
-                        angle_y: 0.,
-                        scale: 1.,
-                        color: Colorf(vec3(1., 155. / 255., 0.)),
-                    };
-
-                    objects.push(object);
+                match g.at(x, y) {
+                    GridElem::Wall => {
+                        let mut model = Mesh::from_file(args.wall_model.as_str()).unwrap();
+                        model.normalize();
+                        mesh = model;
+                        object_color = wall_color;
+                    }
+                    GridElem::Empty => {
+                        mesh = Mesh::wall();
+                        angle_x = -90f32.to_radians();
+                        object_color = wall_color;
+                        y_offset = -3.;
+                    }
+                    GridElem::Exhibit => {
+                        let mut model = Mesh::from_file(args.exhibit_model.as_str()).unwrap();
+                        model.normalize();
+                        mesh = model;
+                        object_color = exhibits_color;
+                    }
                 }
+
+                objects.push(Object {
+                    mesh,
+                    pos: g.to_world_coords(grid_size, x, y) + vec3(0., y_offset, 0.),
+                    angle_x,
+                    angle_y: 0.,
+                    scale: 1.,
+                    color: object_color,
+                });
             }
         }
 
@@ -511,53 +549,13 @@ impl World {
         });
         let light_object_idx = objects.len() - 1;
 
-        let wall_color = Colorf(vec3(0.5, 0.5, 0.5));
-        for i in 0..10 {
-            for j in 0..10 {
-                objects.push(Object {
-                    mesh: Mesh::wall(),
-                    pos: objects[0].pos + vec3(-5. + i as f32, -5. + j as f32, -5.),
-                    angle_x: 0.,
-                    angle_y: 0.,
-                    scale: 1.,
-                    color: wall_color,
-                });
-
-                objects.push(Object {
-                    mesh: Mesh::wall(),
-                    pos: objects[0].pos + vec3(-4. + i as f32, -5. + j as f32, 4.),
-                    angle_x: 0.,
-                    angle_y: 180f32.to_radians(),
-                    scale: 1.,
-                    color: wall_color,
-                });
-
-                objects.push(Object {
-                    mesh: Mesh::wall(),
-                    pos: objects[0].pos + vec3(4., -5. + j as f32, -5. + i as f32),
-                    angle_x: 0.,
-                    angle_y: -90f32.to_radians(),
-                    scale: 1.,
-                    color: wall_color,
-                });
-
-                objects.push(Object {
-                    mesh: Mesh::wall(),
-                    pos: objects[0].pos + vec3(-5. + i as f32, -5., -4. + j as f32),
-                    angle_x: -90f32.to_radians(),
-                    angle_y: 0.,
-                    scale: 1.,
-                    color: wall_color,
-                });
-            }
-        }
-
         let image = Image::new(args.canvas_size, args.canvas_size);
         let depths = DepthBuffer::new(args.canvas_size, args.canvas_size);
         let light_depths = DepthBuffer::new(args.canvas_size, args.canvas_size);
 
-        let initial_camera_pos = vec3(0., 0., 3.);
-        let camera_dir = (objects[0].pos - initial_camera_pos).normalize();
+        let (x_empty, y_empty) = g.first_empty();
+        let initial_camera_pos = g.to_world_coords(grid_size, x_empty, y_empty) + vec3(0., 0.2, 0.);
+        let camera_dir = Vec3::ZERO;
 
         let light = Spotlight {
             pos: initial_camera_pos,
@@ -578,7 +576,7 @@ impl World {
                 pos: initial_camera_pos,
                 dir: camera_dir,
                 up: vec3(0., 1., 0.).normalize(),
-                mouse_x: 0.,
+                mouse_x: 180f32.to_radians(),
                 mouse_y: 0.,
             },
             keys: HashSet::new(),
@@ -989,4 +987,30 @@ fn signed_triangle_area(a: &Vec3, b: &Vec3, c: &Vec3) -> f32 {
 
 fn perspective_divided(v: Vec4) -> Vec4 {
     v / v.w
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn it_parses_grid() {
+        let g = FloorPlan::from_string(
+            r#"
+wwwwwwwww
+w...wwwww
+w.ww.wwww
+w.ww...ww
+w.ww...ww
+w.ww...ww
+w.......w
+w...x...w
+w.......w
+wwwwwwwww"#,
+        );
+
+        assert_eq!(g.width, 9);
+        assert_eq!(g.height, 10);
+        assert_eq!(g.first_empty(), (1, 1));
+    }
 }

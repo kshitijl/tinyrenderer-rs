@@ -67,7 +67,7 @@ impl Mesh {
             bounding_box: (Vec3::ZERO, Vec3::ZERO),
             bounding_box_coords: [Vec4::ZERO; 8],
         };
-        answer.recompute_bb();
+        answer.normalize();
 
         answer
     }
@@ -106,6 +106,7 @@ impl Mesh {
     }
 
     pub fn normalize(&mut self) {
+        self.recompute_bb();
         let bb = self.bounding_box();
 
         let m_trans = Mat4::from_translation(-(bb.1 + bb.0) / 2.);
