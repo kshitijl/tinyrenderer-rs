@@ -13,7 +13,7 @@ pub fn colorvf(c: Vec3) -> Color {
 pub const RED: Color = coloru8(255, 0, 0);
 
 pub struct Image {
-    buf: Vec<u8>,
+    buf: Vec<Color>,
     width: usize,
     height: usize,
 }
@@ -22,8 +22,12 @@ impl Image {
     pub fn new(width: u16, height: u16) -> Self {
         let width = width as usize;
         let height = height as usize;
-        let buf = vec![255u8; width * height * 4];
+        let buf = vec![RED; width * height];
         Self { width, height, buf }
+    }
+
+    pub fn clear(&mut self, c: Color) {
+        self.buf.as_mut_slice().fill(c);
     }
 
     #[inline]
@@ -36,21 +40,15 @@ impl Image {
         self.height as _
     }
 
-    pub fn buf(&self) -> &Vec<u8> {
+    pub fn buf(&self) -> &Vec<Color> {
         &self.buf
-    }
-
-    pub fn buf_mut(&mut self) -> &mut Vec<u8> {
-        &mut self.buf
     }
 
     #[inline]
     pub fn set(&mut self, x: usize, y: usize, color: Color) {
         let y = self.height - y - 1;
-        let idx = (y * self.width + x) * 4;
-        self.buf[idx] = color.x;
-        self.buf[idx + 1] = color.y;
-        self.buf[idx + 2] = color.z;
+        let idx = y * self.width + x;
+        self.buf[idx] = color;
     }
 }
 
@@ -68,6 +66,10 @@ impl DepthBuffer {
             height: height as usize,
             buf,
         }
+    }
+
+    pub fn clear(&mut self) {
+        self.buf.as_mut_slice().fill(f32::MAX)
     }
 
     pub fn min_depth(&self) -> f32 {
@@ -94,10 +96,6 @@ impl DepthBuffer {
         let v = (v - min_depth) / (max_depth - min_depth);
 
         (v * 255.) as u8
-    }
-
-    pub fn buf_mut(&mut self) -> &mut Vec<f32> {
-        &mut self.buf
     }
 
     pub fn buf(&self) -> &Vec<f32> {

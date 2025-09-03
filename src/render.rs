@@ -789,38 +789,26 @@ impl World {
     }
 
     fn clear(&mut self) {
-        // TODO put this clearing code in Image and DepthBuffer respectively
-        let data = self.image.buf_mut();
-        let u32_slice = unsafe {
-            std::slice::from_raw_parts_mut(data.as_mut_ptr() as *mut u32, data.len() / 4)
-        };
-
-        let pattern = 0xaaaaaaffu32;
-        u32_slice.fill(pattern);
-
-        let depth_data = self.depths.buf_mut();
-        depth_data.as_mut_slice().fill(f32::MAX);
-
-        let depth_data = self.light_depths.buf_mut();
-        depth_data.as_mut_slice().fill(f32::MAX);
+        self.image.clear(coloru8(0xff, 0xaa, 0xaa));
+        self.depths.clear();
+        self.light_depths.clear();
     }
 
     pub fn draw(&mut self, frame: &mut [u8]) -> RenderingResult {
         self.clear();
         let rendering_result = self.render();
 
-        frame.fill(255);
-
         assert!(self.image.width() == self.width);
         assert!(self.image.height() == self.width);
         let image_buf = self.image.buf().as_slice();
         for x in 0..self.width {
             for y in 0..self.width {
-                let image_idx = 4 * y * self.width + 4 * x;
+                let image_idx = y * self.width + x;
                 let frame_idx = 4 * y * (self.width * 2) + 4 * x;
 
+                let color = image_buf[image_idx];
                 frame[frame_idx..frame_idx + 4]
-                    .copy_from_slice(&image_buf[image_idx..image_idx + 4]);
+                    .copy_from_slice(&[color.x, color.y, color.z, color.w]);
             }
         }
 
