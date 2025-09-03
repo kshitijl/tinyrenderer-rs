@@ -46,6 +46,11 @@ impl ApplicationHandler for App {
                 .unwrap(),
         );
 
+        window
+            .set_cursor_grab(winit::window::CursorGrabMode::Locked)
+            .unwrap();
+        window.set_cursor_visible(false);
+
         self.window = Some(window.clone());
         let pixels = {
             let window_size = window.inner_size();
