@@ -135,8 +135,8 @@ struct Colorf(Vec3);
 trait Shader {
     type Varying: Copy;
 
-    fn vertex(&self, coord: Vec4, normal: Vec4) -> Self::Varying;
-    fn fragment(&self, varyings: &[Self::Varying; 3], b: BaryCoords) -> Color;
+    fn vertex(&self, object_idx: usize, coord: Vec4, normal: Vec4) -> Self::Varying;
+    fn fragment(&self, object_idx: usize, varyings: &[Self::Varying; 3], b: BaryCoords) -> Color;
 }
 
 struct NoopShaderColorsWhite {
@@ -147,10 +147,10 @@ impl Shader for NoopShaderColorsWhite {
     type Varying = ();
 
     #[inline]
-    fn vertex(&self, _coord: Vec4, _normal: Vec4) -> () {}
+    fn vertex(&self, _: usize, _coord: Vec4, _normal: Vec4) -> () {}
 
     #[inline]
-    fn fragment(&self, _varyings: &[(); 3], _b: BaryCoords) -> Color {
+    fn fragment(&self, _: usize, _varyings: &[(); 3], _b: BaryCoords) -> Color {
         coloru8(255, 255, 255)
     }
 }
@@ -167,7 +167,7 @@ struct FinalRenderShader<'buf> {
     light_viewport: Mat4,
     light_pov_depths: &'buf DepthBuffer,
 
-    object_color: Colorf,
+    objects: &'buf Vec<Object>,
 }
 
 #[derive(Clone, Copy)]
@@ -179,14 +179,19 @@ struct FinalRenderVarying {
 impl<'buf> Shader for FinalRenderShader<'buf> {
     type Varying = FinalRenderVarying;
 
-    fn vertex(&self, world_coord: Vec4, normal: Vec4) -> FinalRenderVarying {
+    fn vertex(&self, _object_idx: usize, world_coord: Vec4, normal: Vec4) -> FinalRenderVarying {
         FinalRenderVarying {
             world_coord,
             normal,
         }
     }
 
-    fn fragment(&self, varyings: &[FinalRenderVarying; 3], b: BaryCoords) -> Color {
+    fn fragment(
+        &self,
+        object_idx: usize,
+        varyings: &[FinalRenderVarying; 3],
+        b: BaryCoords,
+    ) -> Color {
         let (alpha, beta, gamma) = (b.0.x, b.0.y, b.0.z);
         let ambient_intensity = 0.3;
         let (na, nb, nc) = (varyings[0].normal, varyings[1].normal, varyings[2].normal);
@@ -211,7 +216,8 @@ impl<'buf> Shader for FinalRenderShader<'buf> {
         let dir_intensity = dir_intensity * (1. - ambient_intensity);
 
         let total_intensity = ambient_intensity + dir_intensity;
-        let mut color = self.object_color.0 * total_intensity;
+        let object_color = self.objects[object_idx].color.0;
+        let mut color = object_color * total_intensity;
 
         let this_pixel_world_coords = alpha * wa + beta * wb + gamma * wc;
 
@@ -230,7 +236,7 @@ impl<'buf> Shader for FinalRenderShader<'buf> {
                 // do nothing; we're in light
             } else {
                 let total_intensity = ambient_intensity;
-                color = self.object_color.0 * total_intensity;
+                color = object_color * total_intensity;
             }
         }
 
@@ -244,13 +250,14 @@ impl<'buf> FinalRenderShader<'buf> {
         light_vp: Mat4,
         light_viewport: Mat4,
         light_pov_depths: &'buf DepthBuffer,
+        objects: &'buf Vec<Object>,
     ) -> Self {
         Self {
             light_pos,
             light_vp,
             light_viewport,
             light_pov_depths,
-            object_color: Colorf(vec3(1., 1., 1.)),
+            objects,
         }
     }
 }
@@ -259,6 +266,7 @@ fn triangle<S>(
     a: Vec3,
     b: Vec3,
     c: Vec3,
+    object_idx: usize,
     varyings: &[S::Varying; 3],
     shader: &S,
     image: &mut Option<&mut Image>,
@@ -327,7 +335,11 @@ where
                     answer.num_depth_buffer_sets += 1;
 
                     if let Some(image) = image {
-                        let color = shader.fragment(varyings, BaryCoords(vec3(alpha, beta, gamma)));
+                        let color = shader.fragment(
+                            object_idx,
+                            varyings,
+                            BaryCoords(vec3(alpha, beta, gamma)),
+                        );
                         image.set(x, y, color);
                         answer.num_pixels_drawn += 1
                     }
@@ -593,6 +605,7 @@ impl World {
     }
 
     fn render_object<S>(
+        object_idx: usize,
         object: &Object,
         uniforms: &RenderingUniforms,
         image: &mut Option<&mut Image>,
@@ -671,13 +684,14 @@ impl World {
                     let normal = object.mesh.normal(face_idx, i);
                     let normal = m_normal * Vec4::from((normal, 0.));
 
-                    shader.vertex(world_coords[i], normal)
+                    shader.vertex(object_idx, world_coords[i], normal)
                 });
 
                 let triangle_result = triangle(
                     screen_coords[0],
                     screen_coords[1],
                     screen_coords[2],
+                    object_idx,
                     &[varyings[0], varyings[1], varyings[2]],
                     shader,
                     image,
@@ -728,8 +742,9 @@ impl World {
             m_projection: m_projection_light,
             m_view: m_light_view,
         };
-        for object in self.objects.iter() {
+        for (object_idx, object) in self.objects.iter().enumerate() {
             let light_pov_rendering_result = Self::render_object(
+                object_idx,
                 object,
                 &light_uniforms,
                 &mut None,
@@ -765,17 +780,18 @@ impl World {
         // }
 
         // Now the final render
-        let mut final_render = FinalRenderShader::new(
+        let final_render = FinalRenderShader::new(
             self.light.pos,
             light_uniforms.m_projection * light_uniforms.m_view,
             light_uniforms.m_viewport,
             &self.light_depths,
+            &self.objects,
         );
 
-        for object in self.objects.iter() {
-            final_render.object_color = object.color;
+        for (object_idx, object) in self.objects.iter().enumerate() {
             answer = answer
                 + Self::render_object(
+                    object_idx,
                     object,
                     &uniforms,
                     &mut Some(&mut self.image),
