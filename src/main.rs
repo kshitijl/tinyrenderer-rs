@@ -160,7 +160,7 @@ impl ApplicationHandler for App {
 
                 self.last_frame = Instant::now();
                 let rendering_result = self.world.draw(self.pixels.as_mut().unwrap().frame_mut());
-                if self.total_frames % 60 == 0 {
+                if self.total_frames % 1000 == 0 {
                     log::info!(
                         "{:?} average fps {}, this frame {}",
                         rendering_result,

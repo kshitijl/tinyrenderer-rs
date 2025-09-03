@@ -433,11 +433,6 @@ impl FloorPlan {
         }
     }
 
-    fn to_world_coords(&self, grid_size: f32, x: usize, y: usize) -> Vec3 {
-        let pos = vec3(x as f32 * grid_size, -4., y as f32 * grid_size);
-        pos
-    }
-
     fn at(&self, x: usize, y: usize) -> GridElem {
         self.grid[y * self.width + x]
     }
@@ -452,6 +447,32 @@ impl FloorPlan {
         }
 
         panic!("no empty");
+    }
+}
+
+struct Level {
+    floor_plan: FloorPlan,
+    grid_size: f32,
+}
+
+impl Level {
+    fn new(floor_plan: FloorPlan, grid_size: f32) -> Self {
+        Self {
+            floor_plan,
+            grid_size,
+        }
+    }
+
+    fn to_world_coords(&self, x: usize, y: usize) -> Vec3 {
+        let pos = vec3(x as f32 * self.grid_size, -4., y as f32 * self.grid_size);
+        pos
+    }
+
+    fn from_world_coords(&self, v: Vec3) -> (usize, usize) {
+        let x = (v.x / self.grid_size).round();
+        let y = (v.z / self.grid_size).round();
+
+        (x as usize, y as usize)
     }
 }
 
@@ -470,6 +491,7 @@ pub struct World {
     light_object_idx: usize,
 
     objects: Vec<Object>,
+    level: Level,
 
     pub keys: HashSet<KeyCode>,
     pub first_pressed_this_frame: HashSet<KeyCode>,
@@ -496,18 +518,18 @@ w.......w
 wwwwwwwww"#,
         );
 
-        let grid_size = 2.;
+        let level = Level::new(g, 2.);
         let wall_color = Colorf(vec3(0.5, 0.5, 0.5));
         let exhibits_color = Colorf(vec3(1., 155. / 255., 0.));
 
-        for x in 0..g.width {
-            for y in 0..g.height {
+        for x in 0..level.floor_plan.width {
+            for y in 0..level.floor_plan.height {
                 let mesh: Mesh;
                 let mut angle_x = 0.;
                 let object_color: Colorf;
                 let mut y_offset = 0.;
 
-                match g.at(x, y) {
+                match level.floor_plan.at(x, y) {
                     GridElem::Wall => {
                         let mut model = Mesh::from_file(args.wall_model.as_str()).unwrap();
                         model.normalize();
@@ -530,7 +552,7 @@ wwwwwwwww"#,
 
                 objects.push(Object {
                     mesh,
-                    pos: g.to_world_coords(grid_size, x, y) + vec3(0., y_offset, 0.),
+                    pos: level.to_world_coords(x, y) + vec3(0., y_offset, 0.),
                     angle_x,
                     angle_y: 0.,
                     scale: 1.,
@@ -553,8 +575,8 @@ wwwwwwwww"#,
         let depths = DepthBuffer::new(args.canvas_size, args.canvas_size);
         let light_depths = DepthBuffer::new(args.canvas_size, args.canvas_size);
 
-        let (x_empty, y_empty) = g.first_empty();
-        let initial_camera_pos = g.to_world_coords(grid_size, x_empty, y_empty) + vec3(0., 0.2, 0.);
+        let (x_empty, y_empty) = level.floor_plan.first_empty();
+        let initial_camera_pos = level.to_world_coords(x_empty, y_empty) + vec3(0., 0.2, 0.);
         let camera_dir = Vec3::ZERO;
 
         let light = Spotlight {
@@ -589,6 +611,7 @@ wwwwwwwww"#,
                 rotate_objects: false,
                 move_light_with_camera: true,
             },
+            level,
         }
     }
 
@@ -609,22 +632,31 @@ wwwwwwwww"#,
         let forward = self.camera.dir.with_y(0.).normalize();
         let right = forward.cross(self.camera.up);
 
-        match dir {
-            Direction::Forward => {
-                self.camera.pos += forward * speed;
+        let new_pos = match dir {
+            Direction::Forward => self.camera.pos + forward * speed,
+            Direction::Back => self.camera.pos - forward * speed,
+            Direction::Right => self.camera.pos + right * speed,
+            Direction::Left => self.camera.pos - right * speed,
+        };
+
+        let (grid_x, grid_y) = self.level.from_world_coords(new_pos);
+        match self.level.floor_plan.at(grid_x, grid_y) {
+            GridElem::Wall => {
+                // don't allow
             }
-            Direction::Back => {
-                self.camera.pos -= forward * speed;
+            GridElem::Exhibit => {
+                // don't allow
             }
-            Direction::Right => {
-                self.camera.pos += right * speed;
-            }
-            Direction::Left => {
-                self.camera.pos -= right * speed;
+            GridElem::Empty => {
+                self.camera.pos = new_pos;
             }
         }
 
-        log::info!("now at {}", self.camera.pos);
+        log::info!(
+            "now at grid {:?}, world {}",
+            self.level.from_world_coords(self.camera.pos),
+            self.camera.pos
+        );
     }
 
     fn is_key_down(&self, key: KeyCode) -> bool {
