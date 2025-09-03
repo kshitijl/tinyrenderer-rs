@@ -126,10 +126,12 @@ impl Mesh {
         self.faces.len()
     }
 
+    #[allow(dead_code)]
     pub fn num_vertices(&self) -> usize {
         self.vertices.len()
     }
 
+    #[allow(dead_code)]
     pub fn num_normals(&self) -> usize {
         self.normals.len()
     }

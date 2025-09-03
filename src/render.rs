@@ -463,12 +463,11 @@ impl Level {
         }
     }
 
-    fn to_world_coords(&self, x: usize, y: usize) -> Vec3 {
-        let pos = vec3(x as f32 * self.grid_size, -4., y as f32 * self.grid_size);
-        pos
+    fn grid2world(&self, x: usize, y: usize) -> Vec3 {
+        vec3(x as f32 * self.grid_size, -4., y as f32 * self.grid_size)
     }
 
-    fn from_world_coords(&self, v: Vec3) -> (usize, usize) {
+    fn world2grid(&self, v: Vec3) -> (usize, usize) {
         let x = (v.x / self.grid_size).round();
         let y = (v.z / self.grid_size).round();
 
@@ -523,18 +522,15 @@ wwwwwwwww"#,
         let exhibits_color = Colorf(vec3(1., 155. / 255., 0.));
 
         let make_floor = |x, y| {
-            let mesh = Mesh::wall();
-            let angle_x = -90f32.to_radians();
-            let object_color = wall_color;
             let y_offset = -3.;
 
             Object {
-                mesh,
-                pos: level.to_world_coords(x, y) + vec3(0., y_offset, 0.),
-                angle_x,
+                mesh: Mesh::wall(),
+                pos: level.grid2world(x, y) + vec3(0., y_offset, 0.),
+                angle_x: -90f32.to_radians(),
                 angle_y: 0.,
                 scale: 1.,
-                color: object_color,
+                color: wall_color,
             }
         };
         for x in 0..level.floor_plan.width {
@@ -553,7 +549,7 @@ wwwwwwwww"#,
 
                         objects.push(Object {
                             mesh,
-                            pos: level.to_world_coords(x, y) + vec3(0., y_offset, 0.),
+                            pos: level.grid2world(x, y) + vec3(0., y_offset, 0.),
                             angle_x,
                             angle_y: 0.,
                             scale: 1.,
@@ -571,7 +567,7 @@ wwwwwwwww"#,
 
                         objects.push(Object {
                             mesh,
-                            pos: level.to_world_coords(x, y) + vec3(0., y_offset, 0.),
+                            pos: level.grid2world(x, y) + vec3(0., y_offset, 0.),
                             angle_x,
                             angle_y: 0.,
                             scale: 1.,
@@ -599,7 +595,7 @@ wwwwwwwww"#,
         let light_depths = DepthBuffer::new(args.canvas_size, args.canvas_size);
 
         let (x_empty, y_empty) = level.floor_plan.first_empty();
-        let initial_camera_pos = level.to_world_coords(x_empty, y_empty) + vec3(0., 0.2, 0.);
+        let initial_camera_pos = level.grid2world(x_empty, y_empty) + vec3(0., 0.2, 0.);
         let camera_dir = Vec3::ZERO;
 
         let light = Spotlight {
@@ -662,7 +658,7 @@ wwwwwwwww"#,
             Direction::Left => self.camera.pos - right * speed,
         };
 
-        let (grid_x, grid_y) = self.level.from_world_coords(new_pos);
+        let (grid_x, grid_y) = self.level.world2grid(new_pos);
         match self.level.floor_plan.at(grid_x, grid_y) {
             GridElem::Wall => {
                 // don't allow
@@ -677,7 +673,7 @@ wwwwwwwww"#,
 
         log::info!(
             "now at grid {:?}, world {}",
-            self.level.from_world_coords(self.camera.pos),
+            self.level.world2grid(self.camera.pos),
             self.camera.pos
         );
     }
