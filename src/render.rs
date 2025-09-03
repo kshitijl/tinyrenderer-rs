@@ -552,8 +552,6 @@ impl World {
             }
         }
 
-        // objects[0].scale = 3.;
-
         let image = Image::new(args.canvas_size, args.canvas_size);
         let depths = DepthBuffer::new(args.canvas_size, args.canvas_size);
         let light_depths = DepthBuffer::new(args.canvas_size, args.canvas_size);
