@@ -875,35 +875,16 @@ wwwwwwwww"#,
                     shader.vertex(object_idx, world_coords[i], normal)
                 });
 
-                if let Some(image_inside) = &mut image {
-                    triangle(
-                        &screen_coords,
-                        object_idx,
-                        &[varyings[0], varyings[1], varyings[2]],
-                        shader,
-                        Some(image_inside),
-                        depths,
-                    );
-                } else {
-                    triangle(
-                        &screen_coords,
-                        object_idx,
-                        &[varyings[0], varyings[1], varyings[2]],
-                        shader,
-                        None,
-                        depths,
-                    );
-                };
-                // let triangle_result = triangle(
-                //     &screen_coords,
-                //     object_idx,
-                //     &[varyings[0], varyings[1], varyings[2]],
-                //     shader,
-                //     x,
-                //     depths,
-                // );
+                let triangle_result = triangle(
+                    &screen_coords,
+                    object_idx,
+                    &[varyings[0], varyings[1], varyings[2]],
+                    shader,
+                    image.as_deref_mut(),
+                    depths,
+                );
 
-                // answer = answer + triangle_result;
+                answer = answer + triangle_result;
             }
 
             if let Some(image) = &mut image
