@@ -577,6 +577,8 @@ wwwwwwwww"#,
                             scale: 1.,
                             color: object_color,
                         });
+
+                        objects.push(make_floor(x, y));
                     }
                 }
             }
