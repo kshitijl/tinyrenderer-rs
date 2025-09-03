@@ -372,11 +372,7 @@ wwwwwwwww"#,
         self.first_pressed_this_frame.contains(&key)
     }
 
-    pub fn update(
-        &mut self,
-        since_last_frame: Duration,
-        since_start: Duration,
-    ) -> ResolutionChangeAction {
+    fn handle_keys(&mut self) -> ResolutionChangeAction {
         let mut answer = ResolutionChangeAction::DoNothing;
 
         if self.is_key_down(KeyCode::KeyW) {
@@ -419,23 +415,26 @@ wwwwwwwww"#,
             self.renderer.render_settings.split_screen_mode = new_mode;
         }
 
-        self.time_since_start = since_start;
+        self.first_pressed_this_frame.clear();
+        answer
+    }
 
+    fn animate_objects(&mut self, since_last_frame: Duration) {
         if self.movement_settings.rotate_objects {
             self.angle_time += since_last_frame;
         }
 
-        for (idx, object) in self.objects.iter_mut().enumerate() {
-            if object.mesh.num_faces() > 10 {
-                let angle = self.angle_time.as_secs_f32() * (idx as f32 + 1.);
-
-                object.angle_y = angle;
+        for object in self.objects.iter_mut() {
+            let angle = self.angle_time.as_secs_f32();
+            match object.kind {
+                ObjectKind::Exhibit => {
+                    object.angle_y = angle;
+                }
+                ObjectKind::Light | ObjectKind::WallOrFloor => {
+                    // do nothing
+                }
             }
         }
-
-        self.camera.dir = Mat3::from_rotation_y(self.camera.mouse_x)
-            * Mat3::from_rotation_x(self.camera.mouse_y)
-            * vec3(0., 0., -1.);
 
         if self.movement_settings.move_light_with_camera {
             let t = self.time_since_start.as_secs_f32();
@@ -445,8 +444,24 @@ wwwwwwwww"#,
             self.light.dir = self.camera.dir;
             self.objects[self.light_object_idx].pos = self.light.pos;
         }
+    }
 
-        self.first_pressed_this_frame.clear();
+    fn update_camera(&mut self) {
+        self.camera.dir = Mat3::from_rotation_y(self.camera.mouse_x)
+            * Mat3::from_rotation_x(self.camera.mouse_y)
+            * vec3(0., 0., -1.);
+    }
+
+    pub fn update(
+        &mut self,
+        since_last_frame: Duration,
+        since_start: Duration,
+    ) -> ResolutionChangeAction {
+        self.time_since_start = since_start;
+
+        let answer = self.handle_keys();
+        self.update_camera();
+        self.animate_objects(since_last_frame);
 
         answer
     }
