@@ -437,6 +437,10 @@ impl FloorPlan {
         self.grid[y * self.width + x]
     }
 
+    fn is_valid(&self, x: i32, y: i32) -> bool {
+        x >= 0 && y >= 0 && x < self.width as i32 && y < self.height as i32
+    }
+
     fn first_empty(&self) -> (usize, usize) {
         for y in 0..self.height {
             for x in 0..self.width {
@@ -519,6 +523,10 @@ wwwwwwwww"#,
 
         let level = Level::new(g, 2.);
         let wall_color = Colorf(vec3(0.5, 0.5, 0.5));
+        let wall_color1 = Colorf(vec3(1., 0., 0.));
+        let green = Colorf(vec3(0., 1., 0.));
+        let blue = Colorf(vec3(0., 0., 1.));
+        let yellow = Colorf(vec3(1., 1., 0.));
         let exhibits_color = Colorf(vec3(1., 155. / 255., 0.));
 
         let make_floor = |x, y| {
@@ -533,6 +541,26 @@ wwwwwwwww"#,
                 color: wall_color,
             }
         };
+
+        let make_wall = |x, y, facing, y_offset| {
+            let (angle_y, x_offset, z_offset, color) = match facing {
+                (-1, 0) => (-90f32.to_radians(), -1., 0., wall_color1),
+                (1, 0) => (90f32.to_radians(), 1., 0., green),
+                (0, -1) => (180f32.to_radians(), 0., -1., blue),
+                (0, 1) => (0f32.to_radians(), 0., 1., yellow),
+                _ => panic!("weird facing {:?}", facing),
+            };
+
+            Object {
+                mesh: Mesh::wall(),
+                pos: level.grid2world(x, y) + vec3(x_offset, y_offset, z_offset),
+                angle_x: 0.,
+                angle_y,
+                scale: 1.,
+                color: wall_color,
+            }
+        };
+
         for x in 0..level.floor_plan.width {
             for y in 0..level.floor_plan.height {
                 let mesh: Mesh;
@@ -542,19 +570,19 @@ wwwwwwwww"#,
 
                 match level.floor_plan.at(x, y) {
                     GridElem::Wall => {
-                        let mut model = Mesh::from_file(args.wall_model.as_str()).unwrap();
-                        model.normalize();
-                        mesh = model;
-                        object_color = wall_color;
-
-                        objects.push(Object {
-                            mesh,
-                            pos: level.grid2world(x, y) + vec3(0., y_offset, 0.),
-                            angle_x,
-                            angle_y: 0.,
-                            scale: 1.,
-                            color: object_color,
-                        });
+                        for (dx, dy) in [(1, 0), (-1i32, 0), (0, 1), (0, -1i32)] {
+                            let (neighbor_x, neighbor_y) = (x as i32 + dx, y as i32 + dy);
+                            if level.floor_plan.is_valid(neighbor_x, neighbor_y)
+                                && level
+                                    .floor_plan
+                                    .at(neighbor_x as usize, neighbor_y as usize)
+                                    == GridElem::Empty
+                            {
+                                for y_offset in [-2., 0., 2.] {
+                                    objects.push(make_wall(x, y, (dx, dy), y_offset));
+                                }
+                            }
+                        }
                     }
                     GridElem::Empty => {
                         objects.push(make_floor(x, y));
