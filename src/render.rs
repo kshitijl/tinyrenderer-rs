@@ -522,12 +522,27 @@ wwwwwwwww"#,
         let wall_color = Colorf(vec3(0.5, 0.5, 0.5));
         let exhibits_color = Colorf(vec3(1., 155. / 255., 0.));
 
+        let make_floor = |x, y| {
+            let mesh = Mesh::wall();
+            let angle_x = -90f32.to_radians();
+            let object_color = wall_color;
+            let y_offset = -3.;
+
+            Object {
+                mesh,
+                pos: level.to_world_coords(x, y) + vec3(0., y_offset, 0.),
+                angle_x,
+                angle_y: 0.,
+                scale: 1.,
+                color: object_color,
+            }
+        };
         for x in 0..level.floor_plan.width {
             for y in 0..level.floor_plan.height {
                 let mesh: Mesh;
-                let mut angle_x = 0.;
+                let angle_x = 0.;
                 let object_color: Colorf;
-                let mut y_offset = 0.;
+                let y_offset = 0.;
 
                 match level.floor_plan.at(x, y) {
                     GridElem::Wall => {
@@ -535,29 +550,35 @@ wwwwwwwww"#,
                         model.normalize();
                         mesh = model;
                         object_color = wall_color;
+
+                        objects.push(Object {
+                            mesh,
+                            pos: level.to_world_coords(x, y) + vec3(0., y_offset, 0.),
+                            angle_x,
+                            angle_y: 0.,
+                            scale: 1.,
+                            color: object_color,
+                        });
                     }
                     GridElem::Empty => {
-                        mesh = Mesh::wall();
-                        angle_x = -90f32.to_radians();
-                        object_color = wall_color;
-                        y_offset = -3.;
+                        objects.push(make_floor(x, y));
                     }
                     GridElem::Exhibit => {
                         let mut model = Mesh::from_file(args.exhibit_model.as_str()).unwrap();
                         model.normalize();
                         mesh = model;
                         object_color = exhibits_color;
+
+                        objects.push(Object {
+                            mesh,
+                            pos: level.to_world_coords(x, y) + vec3(0., y_offset, 0.),
+                            angle_x,
+                            angle_y: 0.,
+                            scale: 1.,
+                            color: object_color,
+                        });
                     }
                 }
-
-                objects.push(Object {
-                    mesh,
-                    pos: level.to_world_coords(x, y) + vec3(0., y_offset, 0.),
-                    angle_x,
-                    angle_y: 0.,
-                    scale: 1.,
-                    color: object_color,
-                });
             }
         }
 
