@@ -1,6 +1,7 @@
+mod game;
 mod image;
+mod mesh;
 mod render;
-mod wavefront_obj;
 
 use crate::render::World;
 

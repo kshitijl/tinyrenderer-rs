@@ -1,6 +1,6 @@
 use crate::Args;
 use crate::image::*;
-use crate::wavefront_obj::Mesh;
+use crate::mesh::Mesh;
 
 use glam::{Mat3, Mat4, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec3};
 use std::collections::HashSet;
