@@ -61,9 +61,40 @@ pub struct World {
     angle_time: Duration,
 }
 
+enum WireframeMode {
+    TrianglesOnly,
+    WireframeOnly,
+    TrianglesAndWireframes,
+}
+
+impl WireframeMode {
+    fn next(&self) -> Self {
+        match self {
+            Self::TrianglesOnly => Self::WireframeOnly,
+            Self::WireframeOnly => Self::TrianglesAndWireframes,
+            Self::TrianglesAndWireframes => Self::TrianglesOnly,
+        }
+    }
+
+    fn should_render_triangles(&self) -> bool {
+        match self {
+            Self::TrianglesOnly => true,
+            Self::WireframeOnly => false,
+            Self::TrianglesAndWireframes => true,
+        }
+    }
+
+    fn should_render_wireframe(&self) -> bool {
+        match self {
+            Self::TrianglesOnly => false,
+            Self::WireframeOnly => true,
+            Self::TrianglesAndWireframes => true,
+        }
+    }
+}
+
 struct RenderSettings {
-    wireframe: bool,
-    no_triangles: bool,
+    wireframe: WireframeMode,
     draw_lightbulb: bool,
 }
 
@@ -477,8 +508,7 @@ impl World {
             objects,
             width: args.canvas_size as usize,
             render_settings: RenderSettings {
-                wireframe: false,
-                no_triangles: false,
+                wireframe: WireframeMode::TrianglesOnly,
                 draw_lightbulb: false,
             },
             camera: Camera {
@@ -556,19 +586,16 @@ impl World {
             self.move_(Direction::Right);
         }
         if self.was_key_pressed(KeyCode::Digit1) {
-            self.render_settings.wireframe = !self.render_settings.wireframe;
+            self.render_settings.wireframe = self.render_settings.wireframe.next();
         }
         if self.was_key_pressed(KeyCode::Digit2) {
-            self.render_settings.no_triangles = !self.render_settings.no_triangles;
+            self.render_settings.draw_lightbulb = !self.render_settings.draw_lightbulb;
         }
         if self.was_key_pressed(KeyCode::Digit3) {
             self.movement_settings.move_light_around = !self.movement_settings.move_light_around;
         }
         if self.was_key_pressed(KeyCode::Digit4) {
             self.movement_settings.rotate_objects = !self.movement_settings.rotate_objects;
-        }
-        if self.was_key_pressed(KeyCode::Digit5) {
-            self.render_settings.draw_lightbulb = !self.render_settings.draw_lightbulb;
         }
 
         self.time_since_start = since_start;
@@ -667,7 +694,7 @@ impl World {
             if clipped_verts == 3 {
                 continue;
             }
-            if !render_settings.no_triangles {
+            if render_settings.wireframe.should_render_triangles() {
                 let varyings: [S::Varying; 3] = core::array::from_fn(|i| {
                     // We're going to do lighting by dot-producting the light direction
                     // and normals, so it's really THOSE two that need to be transformed
@@ -694,7 +721,7 @@ impl World {
             }
 
             if let Some(image) = image
-                && render_settings.wireframe
+                && render_settings.wireframe.should_render_wireframe()
             {
                 for i in 0..3 {
                     let line_result = line::linevf32(
