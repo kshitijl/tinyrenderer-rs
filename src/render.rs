@@ -999,22 +999,40 @@ wwwwwwwww"#,
         self.clear();
         let rendering_result = self.render();
 
-        let frame_width = match self.render_settings.split_screen_mode {
-            SplitScreenMode::Split => self.width * 2,
-            SplitScreenMode::Normal => self.width,
-        };
-
         assert!(self.image.width() == self.width);
         assert!(self.image.height() == self.width);
         let image_buf = self.image.buf().as_slice();
-        for x in 0..self.width {
-            for y in 0..self.width {
-                let image_idx = y * self.width + x;
-                let frame_idx = 4 * y * frame_width + 4 * x;
 
-                let color = image_buf[image_idx];
-                frame[frame_idx..frame_idx + 4]
-                    .copy_from_slice(&[color.x, color.y, color.z, color.w]);
+        match self.render_settings.split_screen_mode {
+            SplitScreenMode::Normal => {
+                // This is the hot path!
+                let image_slice = unsafe {
+                    std::slice::from_raw_parts(image_buf.as_ptr() as *const u32, image_buf.len())
+                };
+                let frame_slice = unsafe {
+                    std::slice::from_raw_parts_mut(frame.as_mut_ptr() as *mut u32, image_buf.len())
+                };
+
+                frame_slice.copy_from_slice(image_slice);
+            }
+            SplitScreenMode::Split => {
+                let split_screen_frame_width = self.width * 2;
+
+                for y in 0..self.width {
+                    let image_slice = unsafe {
+                        std::slice::from_raw_parts(
+                            image_buf[y * self.width..].as_ptr() as *const u32,
+                            self.width,
+                        )
+                    };
+                    let frame_slice = unsafe {
+                        std::slice::from_raw_parts_mut(
+                            frame[4 * y * split_screen_frame_width..].as_ptr() as *mut u32,
+                            self.width,
+                        )
+                    };
+                    frame_slice.copy_from_slice(image_slice);
+                }
             }
         }
 
@@ -1025,6 +1043,8 @@ wwwwwwwww"#,
             SplitScreenMode::Split => {
                 assert!(self.light_depths.width() == self.width);
                 assert!(self.light_depths.height() == self.width);
+                let split_screen_frame_width = self.width * 2;
+
                 let depth_buf = self.light_depths.buf();
                 let min_depth = self.light_depths.min_depth();
                 let max_depth = self.light_depths.max_depth();
@@ -1032,7 +1052,7 @@ wwwwwwwww"#,
                 for x in 0..self.width {
                     for y in 0..self.width {
                         let image_idx = y * self.width + x;
-                        let frame_idx = 4 * y * frame_width + 4 * (x + self.width);
+                        let frame_idx = 4 * y * split_screen_frame_width + 4 * (x + self.width);
 
                         let depth = depth_buf[image_idx];
                         let gray = DepthBuffer::depth_to_u8(depth, min_depth, max_depth);
