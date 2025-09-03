@@ -951,20 +951,6 @@ wwwwwwwww"#,
             m_view,
         };
 
-        // if self.render_settings.draw_lightbulb {
-        //     let lightbulb_shader = NoopShaderColorsWhite::new();
-        //     answer = answer
-        //         + Self::render_object(
-        //             &self.light,
-        //             &uniforms,
-        //             &mut Some(&mut self.image),
-        //             &mut self.depths,
-        //             &self.render_settings,
-        //             &|w, n| lightbulb_shader.vertex_shader(w, n),
-        //             &|v, b| lightbulb_shader.fragment_shader(v, b),
-        //         );
-        // }
-
         // Now the final render
         let final_render = FinalRenderShader::new(
             self.light.pos,
