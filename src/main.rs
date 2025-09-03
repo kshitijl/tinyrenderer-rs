@@ -3,8 +3,6 @@ mod image;
 mod mesh;
 mod render;
 
-use crate::render::World;
-
 use clap::Parser;
 use pixels::{Pixels, SurfaceTexture};
 use std::sync::Arc;
@@ -18,14 +16,14 @@ use winit::window::{Window, WindowId};
 struct App {
     window: Option<Arc<Window>>,
     pixels: Option<Pixels<'static>>,
-    world: World,
+    world: game::World,
     started: Instant,
     last_frame: Instant,
     total_frames: u64,
 }
 
 impl App {
-    fn new(world: World) -> Self {
+    fn new(world: game::World) -> Self {
         let started = Instant::now();
         let last_frame = started;
         Self {
@@ -144,10 +142,10 @@ impl ApplicationHandler for App {
                 let action = self.world.update(since_last_frame, since_start);
 
                 match action {
-                    render::ResolutionChangeAction::DoNothing => {
+                    game::ResolutionChangeAction::DoNothing => {
                         // do nothing
                     }
-                    render::ResolutionChangeAction::ChangeTo { x, y } => {
+                    game::ResolutionChangeAction::ChangeTo { x, y } => {
                         self.pixels.as_mut().unwrap().resize_buffer(x, y).unwrap()
                     }
                 }
@@ -199,7 +197,7 @@ fn main() -> std::io::Result<()> {
     env_logger::init();
 
     let args = Args::parse();
-    let world = World::new(&args);
+    let world = game::World::new(&args);
 
     let event_loop = EventLoop::new().unwrap();
 
