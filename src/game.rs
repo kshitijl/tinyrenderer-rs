@@ -2,7 +2,8 @@ use crate::Args;
 use crate::mesh::Mesh;
 use crate::render::*;
 
-use glam::{Mat3, Vec3, vec3};
+use glam::{IVec2, Mat3, USizeVec2, Vec3, usizevec2, vec3};
+use smallvec::SmallVec;
 use std::collections::HashSet;
 use std::f32;
 use std::time::Duration;
@@ -29,6 +30,11 @@ pub struct Camera {
 pub struct Spotlight {
     pub pos: Vec3,
     pub dir: Vec3,
+}
+
+struct AABB2D {
+    min: IVec2,
+    max: IVec2,
 }
 
 enum Direction {
@@ -68,6 +74,8 @@ struct FloorPlan {
 }
 
 impl FloorPlan {
+    // TODO invert y here and elsewhere in this 2D stuff. y=0 should mean lower
+    // on the screen. same convention as the rest of this code.
     fn from_string(s: &str) -> Self {
         let mut answer = Vec::new();
         let s = s.trim();
@@ -99,6 +107,19 @@ impl FloorPlan {
             height,
             grid: answer,
         }
+    }
+
+    fn valid_neighbors(&self, p: USizeVec2) -> SmallVec<[USizeVec2; 4]> {
+        let mut answer = SmallVec::new();
+
+        for (dx, dy) in [(1, 0), (-1i32, 0), (0, 1), (0, -1i32)] {
+            let (neighbor_x, neighbor_y) = (p.x as i32 + dx, p.y as i32 + dy);
+            if self.is_valid(neighbor_x, neighbor_y) {
+                answer.push(usizevec2(neighbor_x as usize, neighbor_y as usize));
+            }
+        }
+
+        answer
     }
 
     fn at(&self, x: usize, y: usize) -> GridElem {
@@ -235,16 +256,18 @@ wwwwwwwww"#,
 
                 match level.floor_plan.at(x, y) {
                     GridElem::Wall => {
-                        for (dx, dy) in [(1, 0), (-1i32, 0), (0, 1), (0, -1i32)] {
-                            let (neighbor_x, neighbor_y) = (x as i32 + dx, y as i32 + dy);
-                            if level.floor_plan.is_valid(neighbor_x, neighbor_y)
-                                && level
-                                    .floor_plan
-                                    .at(neighbor_x as usize, neighbor_y as usize)
-                                    == GridElem::Empty
-                            {
+                        for neighbor in level.floor_plan.valid_neighbors(usizevec2(x, y)) {
+                            if level.floor_plan.at(neighbor.x, neighbor.y) == GridElem::Empty {
                                 for y_offset in [-2., 0., 2.] {
-                                    objects.push(make_wall(x, y, (dx, dy), y_offset));
+                                    objects.push(make_wall(
+                                        x,
+                                        y,
+                                        (
+                                            neighbor.x as i32 - x as i32,
+                                            neighbor.y as i32 - y as i32,
+                                        ),
+                                        y_offset,
+                                    ));
                                 }
                             }
                         }
@@ -337,14 +360,31 @@ wwwwwwwww"#,
         let forward = self.camera.dir.with_y(0.).normalize();
         let right = forward.cross(self.camera.up);
 
-        let new_pos = match dir {
+        let desired_pos = match dir {
             Direction::Forward => self.camera.pos + forward * speed,
             Direction::Back => self.camera.pos - forward * speed,
             Direction::Right => self.camera.pos + right * speed,
             Direction::Left => self.camera.pos - right * speed,
         };
 
-        let (grid_x, grid_y) = self.level.world2grid(new_pos);
+        /*
+        Super dumb and simple collision detection.
+
+        High level: prevent getting too close to walls, exhibits and guards,
+        where "too close" is defined by some epsilon.
+
+        Medium level: find the distance between the desired position and each
+        possible collider. If any distance is below epsilon, reject motion.
+
+        TODO what if guards trap the player lol?
+
+        Details:
+         - iterate over possible colliders: nearby walls and exhibits; all guards
+         - get their AABB in the X-Z plane
+         - find the distance from desired pos to each AABB
+         - if any distance < epsilon then reject motion
+        */
+        let (grid_x, grid_y) = self.level.world2grid(desired_pos);
         match self.level.floor_plan.at(grid_x, grid_y) {
             GridElem::Wall => {
                 // don't allow
@@ -353,7 +393,7 @@ wwwwwwwww"#,
                 // don't allow
             }
             GridElem::Empty => {
-                self.camera.pos = new_pos;
+                self.camera.pos = desired_pos;
             }
         }
 

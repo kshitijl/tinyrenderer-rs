@@ -1824,6 +1824,7 @@ dependencies = [
  "nom",
  "pixels",
  "rand",
+ "smallvec",
  "winit",
 ]
 
