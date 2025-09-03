@@ -40,29 +40,6 @@ struct Spotlight {
     dir: Vec3,
 }
 
-pub struct World {
-    render_settings: RenderSettings,
-    movement_settings: MovementSettings,
-
-    image: Image,
-    depths: DepthBuffer,
-    light_depths: DepthBuffer,
-    pub width: usize,
-
-    camera: Camera,
-
-    light: Spotlight,
-    light_object_idx: usize,
-
-    objects: Vec<Object>,
-
-    pub keys: HashSet<KeyCode>,
-    pub first_pressed_this_frame: HashSet<KeyCode>,
-
-    time_since_start: Duration,
-    angle_time: Duration,
-}
-
 enum WireframeMode {
     TrianglesOnly,
     WireframeOnly,
@@ -478,6 +455,29 @@ impl FloorPlan {
     }
 }
 
+pub struct World {
+    render_settings: RenderSettings,
+    movement_settings: MovementSettings,
+
+    image: Image,
+    depths: DepthBuffer,
+    light_depths: DepthBuffer,
+    width: usize,
+
+    camera: Camera,
+
+    light: Spotlight,
+    light_object_idx: usize,
+
+    objects: Vec<Object>,
+
+    pub keys: HashSet<KeyCode>,
+    pub first_pressed_this_frame: HashSet<KeyCode>,
+
+    time_since_start: Duration,
+    angle_time: Duration,
+}
+
 impl World {
     pub fn new(args: &Args) -> Self {
         let mut objects = Vec::new();
@@ -590,6 +590,10 @@ wwwwwwwww"#,
                 move_light_with_camera: true,
             },
         }
+    }
+
+    pub fn width(&self) -> usize {
+        self.width
     }
 
     pub fn camera_mouse(&mut self, dx: f64, dy: f64) {

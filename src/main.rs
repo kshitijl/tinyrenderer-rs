@@ -57,8 +57,8 @@ impl ApplicationHandler for App {
             let surface_texture =
                 SurfaceTexture::new(window_size.width, window_size.height, window.clone());
             match Pixels::new(
-                2 * self.world.width as u32,
-                self.world.width as u32,
+                2 * self.world.width() as u32,
+                self.world.width() as u32,
                 surface_texture,
             ) {
                 Ok(mut pixels) => {
