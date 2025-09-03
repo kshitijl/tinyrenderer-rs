@@ -147,7 +147,7 @@ impl Shader for NoopShaderColorsWhite {
     type Varying = ();
 
     #[inline]
-    fn vertex(&self, _: usize, _coord: Vec4, _normal: Vec4) -> () {}
+    fn vertex(&self, _: usize, _coord: Vec4, _normal: Vec4) {}
 
     #[inline]
     fn fragment(&self, _: usize, _varyings: &[(); 3], _b: BaryCoords) -> Color {
@@ -263,9 +263,7 @@ impl<'buf> FinalRenderShader<'buf> {
 }
 
 fn triangle<S>(
-    a: Vec3,
-    b: Vec3,
-    c: Vec3,
+    verts: &[Vec3; 3],
     object_idx: usize,
     varyings: &[S::Varying; 3],
     shader: &S,
@@ -280,6 +278,8 @@ where
 
     let width = depths.width();
     let height = depths.height();
+
+    let [a, b, c] = verts;
 
     let smallest_x = f32::min(a.x, f32::min(b.x, c.x)) as i32;
     let smallest_y = f32::min(a.y, f32::min(b.y, c.y)) as i32;
@@ -306,17 +306,17 @@ where
             answer.num_bb_pixels_considered += 1;
             let p = Vec3::new(x as f32, y as f32, 0.);
 
-            let alpha = signed_triangle_area(p, b, c) / total_area;
+            let alpha = signed_triangle_area(&p, b, c) / total_area;
             if alpha < 0.0 {
                 continue;
             }
 
-            let beta = signed_triangle_area(p, c, a) / total_area;
+            let beta = signed_triangle_area(&p, c, a) / total_area;
             if beta < 0.0 {
                 continue;
             }
 
-            let gamma = signed_triangle_area(p, a, b) / total_area;
+            let gamma = signed_triangle_area(&p, a, b) / total_area;
             if gamma < 0.0 {
                 continue;
             }
@@ -688,9 +688,7 @@ impl World {
                 });
 
                 let triangle_result = triangle(
-                    screen_coords[0],
-                    screen_coords[1],
-                    screen_coords[2],
+                    &screen_coords,
                     object_idx,
                     &[varyings[0], varyings[1], varyings[2]],
                     shader,
@@ -852,7 +850,7 @@ impl World {
 }
 
 #[inline]
-fn signed_triangle_area(a: Vec3, b: Vec3, c: Vec3) -> f32 {
+fn signed_triangle_area(a: &Vec3, b: &Vec3, c: &Vec3) -> f32 {
     let answer = (b.y - a.y) * (b.x + a.x) + (c.y - b.y) * (c.x + b.x) + (a.y - c.y) * (a.x + c.x);
     0.5 * answer
 }
