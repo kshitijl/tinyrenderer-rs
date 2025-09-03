@@ -40,6 +40,48 @@ struct Spotlight {
     dir: Vec3,
 }
 
+enum GridElem {
+    Wall,
+    Empty,
+    Exhibit,
+}
+
+struct FloorPlan {
+    width: usize,
+    height: usize,
+    grid: Vec<GridElem>,
+}
+
+impl FloorPlan {
+    // fn from_string(s: &str) -> Self {
+    //     let mut answer = Vec::new();
+    //     let mut width = 0;
+    //     let mut height = 0;
+
+    //     let unique_widths: HashSet<usize> = s.lines().map(|line| line.len()).collect();
+
+    //     if unique_widths.len() > 1 {
+    //         panic!("grid not rectangular")
+    //     }
+    //     for c in s.chars() {
+    //         let elem = match c {
+    //             'w' => Some(GridElem::Wall),
+    //             '.' => Some(GridElem::Empty),
+    //             'x' => Some(GridElem::Exhibit),
+    //             '\n' => None,
+    //             _ => panic!("unknown grid letter {}", c),
+    //         };
+    //         if let Some(e) = elem {
+    //             answe
+    //     }
+
+    //     Self {
+    //         width,
+    //         height,
+    //         grid: answer,
+    //     }
+    // }
+}
 pub struct World {
     render_settings: RenderSettings,
     movement_settings: MovementSettings,
@@ -52,6 +94,8 @@ pub struct World {
     camera: Camera,
 
     light: Spotlight,
+    light_object_idx: usize,
+
     objects: Vec<Object>,
 
     pub keys: HashSet<KeyCode>,
@@ -93,14 +137,19 @@ impl WireframeMode {
     }
 }
 
+enum SplitScreenMode {
+    Normal,
+    Split,
+}
+
 struct RenderSettings {
     wireframe: WireframeMode,
-    draw_lightbulb: bool,
+    split_screen_mode: SplitScreenMode,
 }
 
 struct MovementSettings {
     rotate_objects: bool,
-    move_light_around: bool,
+    move_light_with_camera: bool,
 }
 
 struct RenderingUniforms {
@@ -396,6 +445,12 @@ fn should_clip(clip_coordinates: &Vec4) -> bool {
 
     false
 }
+
+pub enum ResolutionChangeAction {
+    DoNothing,
+    ChangeTo { x: u32, y: u32 },
+}
+
 impl World {
     pub fn new(args: &Args) -> Self {
         let mut objects = Vec::new();
@@ -445,6 +500,16 @@ impl World {
                 }
             }
         }
+
+        objects.push(Object {
+            mesh: objects[0].mesh.clone(),
+            pos: vec3(0., 0., 0.),
+            angle_x: 0.,
+            angle_y: 0.,
+            scale: 0.3,
+            color: Colorf(vec3(1., 1., 1.)),
+        });
+        let light_object_idx = objects.len() - 1;
 
         let wall_color = Colorf(vec3(0.5, 0.5, 0.5));
         for i in 0..10 {
@@ -508,8 +573,8 @@ impl World {
             objects,
             width: args.canvas_size as usize,
             render_settings: RenderSettings {
+                split_screen_mode: SplitScreenMode::Split,
                 wireframe: WireframeMode::TrianglesOnly,
-                draw_lightbulb: false,
             },
             camera: Camera {
                 pos: initial_camera_pos,
@@ -521,11 +586,12 @@ impl World {
             keys: HashSet::new(),
             first_pressed_this_frame: HashSet::new(),
             light,
+            light_object_idx,
             time_since_start: Duration::from_secs(0),
             angle_time: Duration::from_secs(0),
             movement_settings: MovementSettings {
                 rotate_objects: false,
-                move_light_around: false,
+                move_light_with_camera: true,
             },
         }
     }
@@ -569,7 +635,13 @@ impl World {
         self.first_pressed_this_frame.contains(&key)
     }
 
-    pub fn update(&mut self, since_last_frame: Duration, since_start: Duration) {
+    pub fn update(
+        &mut self,
+        since_last_frame: Duration,
+        since_start: Duration,
+    ) -> ResolutionChangeAction {
+        let mut answer = ResolutionChangeAction::DoNothing;
+
         if self.is_key_down(KeyCode::KeyW) {
             self.move_(Direction::Forward);
         }
@@ -585,17 +657,28 @@ impl World {
         if self.is_key_down(KeyCode::KeyD) {
             self.move_(Direction::Right);
         }
+
         if self.was_key_pressed(KeyCode::Digit1) {
             self.render_settings.wireframe = self.render_settings.wireframe.next();
         }
-        if self.was_key_pressed(KeyCode::Digit2) {
-            self.render_settings.draw_lightbulb = !self.render_settings.draw_lightbulb;
-        }
         if self.was_key_pressed(KeyCode::Digit3) {
-            self.movement_settings.move_light_around = !self.movement_settings.move_light_around;
+            self.movement_settings.move_light_with_camera =
+                !self.movement_settings.move_light_with_camera;
         }
         if self.was_key_pressed(KeyCode::Digit4) {
             self.movement_settings.rotate_objects = !self.movement_settings.rotate_objects;
+        }
+        if self.was_key_pressed(KeyCode::Digit5) {
+            let (new_x, new_mode) = match self.render_settings.split_screen_mode {
+                SplitScreenMode::Normal => (self.width * 2, SplitScreenMode::Split),
+                SplitScreenMode::Split => (self.width, SplitScreenMode::Normal),
+            };
+
+            answer = ResolutionChangeAction::ChangeTo {
+                x: new_x as u32,
+                y: self.width as u32,
+            };
+            self.render_settings.split_screen_mode = new_mode;
         }
 
         self.time_since_start = since_start;
@@ -616,13 +699,18 @@ impl World {
             * Mat3::from_rotation_x(self.camera.mouse_y)
             * vec3(0., 0., -1.);
 
-        let t = self.time_since_start.as_secs_f32();
+        if self.movement_settings.move_light_with_camera {
+            let t = self.time_since_start.as_secs_f32();
 
-        self.light.pos =
-            self.camera.pos + vec3(0.1 * f32::sin(t), -0.6 + 0.1 * f32::cos(0.7 * t), -0.1);
-        self.light.dir = self.camera.dir;
+            self.light.pos =
+                self.camera.pos + vec3(0.1 * f32::sin(t), -0.6 + 0.1 * f32::cos(0.7 * t), -0.1);
+            self.light.dir = self.camera.dir;
+            self.objects[self.light_object_idx].pos = self.light.pos;
+        }
 
         self.first_pressed_this_frame.clear();
+
+        answer
     }
 
     fn render_object<S>(
@@ -808,8 +896,18 @@ impl World {
         );
 
         for (object_idx, object) in self.objects.iter().enumerate() {
-            answer = answer
-                + Self::render_object(
+            let render_result = if object_idx == self.light_object_idx {
+                Self::render_object(
+                    object_idx,
+                    object,
+                    &uniforms,
+                    &mut Some(&mut self.image),
+                    &mut self.depths,
+                    &self.render_settings,
+                    &light_pov,
+                )
+            } else {
+                Self::render_object(
                     object_idx,
                     object,
                     &uniforms,
@@ -817,7 +915,10 @@ impl World {
                     &mut self.depths,
                     &self.render_settings,
                     &final_render,
-                );
+                )
+            };
+
+            answer = answer + render_result;
         }
 
         answer
@@ -833,13 +934,18 @@ impl World {
         self.clear();
         let rendering_result = self.render();
 
+        let frame_width = match self.render_settings.split_screen_mode {
+            SplitScreenMode::Split => self.width * 2,
+            SplitScreenMode::Normal => self.width,
+        };
+
         assert!(self.image.width() == self.width);
         assert!(self.image.height() == self.width);
         let image_buf = self.image.buf().as_slice();
         for x in 0..self.width {
             for y in 0..self.width {
                 let image_idx = y * self.width + x;
-                let frame_idx = 4 * y * (self.width * 2) + 4 * x;
+                let frame_idx = 4 * y * frame_width + 4 * x;
 
                 let color = image_buf[image_idx];
                 frame[frame_idx..frame_idx + 4]
@@ -847,22 +953,29 @@ impl World {
             }
         }
 
-        assert!(self.light_depths.width() == self.width);
-        assert!(self.light_depths.height() == self.width);
-        let depth_buf = self.light_depths.buf();
-        let min_depth = self.light_depths.min_depth();
-        let max_depth = self.light_depths.max_depth();
+        match self.render_settings.split_screen_mode {
+            SplitScreenMode::Normal => {
+                // do nothing
+            }
+            SplitScreenMode::Split => {
+                assert!(self.light_depths.width() == self.width);
+                assert!(self.light_depths.height() == self.width);
+                let depth_buf = self.light_depths.buf();
+                let min_depth = self.light_depths.min_depth();
+                let max_depth = self.light_depths.max_depth();
 
-        for x in 0..self.width {
-            for y in 0..self.width {
-                let image_idx = y * self.width + x;
-                let frame_idx = 4 * y * (self.width * 2) + 4 * (x + self.width);
+                for x in 0..self.width {
+                    for y in 0..self.width {
+                        let image_idx = y * self.width + x;
+                        let frame_idx = 4 * y * frame_width + 4 * (x + self.width);
 
-                let depth = depth_buf[image_idx];
-                let gray = DepthBuffer::depth_to_u8(depth, min_depth, max_depth);
+                        let depth = depth_buf[image_idx];
+                        let gray = DepthBuffer::depth_to_u8(depth, min_depth, max_depth);
 
-                let color = [gray, gray, gray, 255];
-                frame[frame_idx..frame_idx + 4].copy_from_slice(&color);
+                        let color = [gray, gray, gray, 255];
+                        frame[frame_idx..frame_idx + 4].copy_from_slice(&color);
+                    }
+                }
             }
         }
 

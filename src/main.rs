@@ -140,7 +140,16 @@ impl ApplicationHandler for App {
                 let since_last_frame = self.last_frame.elapsed();
                 let since_start = self.started.elapsed();
 
-                self.world.update(since_last_frame, since_start);
+                let action = self.world.update(since_last_frame, since_start);
+
+                match action {
+                    render::ResolutionChangeAction::DoNothing => {
+                        // do nothing
+                    }
+                    render::ResolutionChangeAction::ChangeTo { x, y } => {
+                        self.pixels.as_mut().unwrap().resize_buffer(x, y).unwrap()
+                    }
+                }
 
                 // Draw the current frame
 
