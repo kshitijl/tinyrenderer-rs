@@ -282,7 +282,7 @@ fn triangle<S>(
     object_idx: usize,
     varyings: &[S::Varying; 3],
     shader: &S,
-    image: &mut Option<&mut Image>,
+    mut image: Option<&mut Image>,
     depths: &mut DepthBuffer,
 ) -> RenderingResult
 where
@@ -349,7 +349,7 @@ where
                     depths.set(x, y, z);
                     answer.num_depth_buffer_sets += 1;
 
-                    if let Some(image) = image {
+                    if let Some(image) = &mut image {
                         let color = shader.fragment(
                             object_idx,
                             varyings,
@@ -543,7 +543,7 @@ wwwwwwwww"#,
         };
 
         let make_wall = |x, y, facing, y_offset| {
-            let (angle_y, x_offset, z_offset, color) = match facing {
+            let (angle_y, x_offset, z_offset, _color) = match facing {
                 (-1, 0) => (-90f32.to_radians(), -1., 0., wall_color1),
                 (1, 0) => (90f32.to_radians(), 1., 0., green),
                 (0, -1) => (180f32.to_radians(), 0., -1., blue),
@@ -796,7 +796,7 @@ wwwwwwwww"#,
         object_idx: usize,
         object: &Object,
         uniforms: &RenderingUniforms,
-        image: &mut Option<&mut Image>,
+        mut image: Option<&mut Image>,
         depths: &mut DepthBuffer,
         render_settings: &RenderSettings,
         shader: &S,
@@ -875,19 +875,38 @@ wwwwwwwww"#,
                     shader.vertex(object_idx, world_coords[i], normal)
                 });
 
-                let triangle_result = triangle(
-                    &screen_coords,
-                    object_idx,
-                    &[varyings[0], varyings[1], varyings[2]],
-                    shader,
-                    image,
-                    depths,
-                );
+                if let Some(image_inside) = &mut image {
+                    triangle(
+                        &screen_coords,
+                        object_idx,
+                        &[varyings[0], varyings[1], varyings[2]],
+                        shader,
+                        Some(image_inside),
+                        depths,
+                    );
+                } else {
+                    triangle(
+                        &screen_coords,
+                        object_idx,
+                        &[varyings[0], varyings[1], varyings[2]],
+                        shader,
+                        None,
+                        depths,
+                    );
+                };
+                // let triangle_result = triangle(
+                //     &screen_coords,
+                //     object_idx,
+                //     &[varyings[0], varyings[1], varyings[2]],
+                //     shader,
+                //     x,
+                //     depths,
+                // );
 
-                answer = answer + triangle_result;
+                // answer = answer + triangle_result;
             }
 
-            if let Some(image) = image
+            if let Some(image) = &mut image
                 && render_settings.wireframe.should_render_wireframe()
             {
                 for i in 0..3 {
@@ -933,7 +952,7 @@ wwwwwwwww"#,
                 object_idx,
                 object,
                 &light_uniforms,
-                &mut None,
+                None,
                 &mut self.light_depths,
                 &self.render_settings,
                 &light_pov,
@@ -980,7 +999,7 @@ wwwwwwwww"#,
                     object_idx,
                     object,
                     &uniforms,
-                    &mut Some(&mut self.image),
+                    Some(&mut self.image),
                     &mut self.depths,
                     &self.render_settings,
                     &light_pov,
@@ -990,7 +1009,7 @@ wwwwwwwww"#,
                     object_idx,
                     object,
                     &uniforms,
-                    &mut Some(&mut self.image),
+                    Some(&mut self.image),
                     &mut self.depths,
                     &self.render_settings,
                     &final_render,
