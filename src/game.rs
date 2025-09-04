@@ -233,27 +233,27 @@ impl World {
     pub fn new(args: &Args) -> Self {
         let mut objects = Vec::new();
 
-        //         let g = FloorPlan::from_string(
-        //             r#"
-        // wwwwwwwww
-        // w...wwwww
-        // w..w.wwww
-        // w..w...ww
-        // w..w...ww
-        // w..w...ww
-        // w.......w
-        // w...x...w
-        // w.......w
-        // wwwwwwwww"#,
-        //         );
-
         let g = FloorPlan::from_string(
             r#"
-wwwwwwwwww
-w.wwwwwwww
-wwwwwwwwww
-"#,
+wwwwwww
+w...www
+w..w.ww
+w..w..w
+w..w..w
+w..w..w
+w.....w
+w...x.w
+w.....w
+wwwwwww"#,
         );
+
+        // //         let g = FloorPlan::from_string(
+        // //             r#"
+        // wwwwwwwwww
+        // w.wwwwwwww
+        // wwwwwwwwww
+        // "#,
+        //         );
 
         for y in 0..g.height() {
             for x in 0..g.width() {
@@ -393,7 +393,7 @@ wwwwwwwwww
         let light_object_idx = objects.len() - 1;
 
         let (x_empty, y_empty) = level.floor_plan.first_empty();
-        let initial_camera_pos = level.grid2world(x_empty, y_empty) + vec3(0.2, 7., 0.2);
+        let initial_camera_pos = level.grid2world(x_empty, y_empty) + vec3(0.2, 0.4, 0.2);
 
         log::info!(
             "initial player position in world is {}, in grid is {}",
@@ -447,12 +447,12 @@ wwwwwwwwww
     }
 
     fn move_(&mut self, dir: Direction) {
-        let speed = 0.01;
-        // let forward = self.camera.dir.with_y(0.).normalize();
-        // let right = forward.cross(self.camera.up);
+        let speed = 0.1;
+        let forward = self.camera.dir.with_y(0.).normalize();
+        let right = forward.cross(self.camera.up);
 
-        let forward = vec3(0., 0., -1.);
-        let right = vec3(1., 0., 0.);
+        // let forward = vec3(0., 0., -1.);
+        // let right = vec3(1., 0., 0.);
 
         let desired_pos = match dir {
             Direction::Forward => self.camera.pos + forward * speed,
@@ -479,12 +479,7 @@ wwwwwwwwww
          - find the distance from desired pos to each AABB
          - if any distance < epsilon then reject motion
         */
-        #[derive(PartialEq)]
-        enum MotionDecision {
-            Allow,
-            Reject,
-        }
-        let eps = 0.1;
+        let eps = 1.7;
 
         log::info!(
             "current: {}. desired: {}. current grid loc: {}. desired grid loc: {}",
@@ -494,24 +489,18 @@ wwwwwwwwww
             self.level.world2grid(desired_pos)
         );
 
-        let mut decision = MotionDecision::Allow;
+        let mut current_min_distance = f32::MAX;
+        let mut desired_min_distance = f32::MAX;
         let current_grid_pos = self.level.world2grid(self.camera.pos);
         for neighbor in self.level.floor_plan.valid_neighbors(current_grid_pos) {
             match self.level.floor_plan.at(neighbor) {
                 GridElem::Wall | GridElem::Exhibit => {
                     let aabb = self.level.aabb(neighbor);
-                    let distance = aabb.distance(desired_pos);
-                    log::info!(
-                        "consider neighbor {:?} with aabb {:?}, current distance {}, desired distance {}",
-                        neighbor,
-                        aabb,
-                        aabb.distance(self.camera.pos),
-                        aabb.distance(desired_pos)
-                    );
-                    if distance < eps {
-                        decision = MotionDecision::Reject;
-                        break;
-                    }
+                    let desired_distance = aabb.distance(desired_pos);
+                    let current_distance = aabb.distance(self.camera.pos);
+
+                    current_min_distance = f32::min(current_distance, current_min_distance);
+                    desired_min_distance = f32::min(desired_distance, desired_min_distance);
                 }
                 GridElem::Empty => {
                     // do nothing, always allow
@@ -519,28 +508,18 @@ wwwwwwwwww
             }
         }
 
-        if decision == MotionDecision::Allow {
-            log::info!("movement was allowed. new loc is {}", desired_pos);
+        if desired_min_distance < eps && desired_min_distance < current_min_distance {
+            // do not allow
+        } else {
+            // log::info!("movement was allowed. new loc is {}", desired_pos);
             self.camera.pos = desired_pos;
         }
-        // let (grid_x, grid_y) = self.level.world2grid(desired_pos);
-        // match self.level.floor_plan.at(grid_x, grid_y) {
-        //     GridElem::Wall => {
-        //         // don't allow
-        //     }
-        //     GridElem::Exhibit => {
-        //         // don't allow
-        //     }
-        //     GridElem::Empty => {
-        //         self.camera.pos = desired_pos;
-        //     }
-        // }
 
-        log::info!(
-            "now at grid {:?}, world {}",
-            self.level.world2grid(self.camera.pos),
-            self.camera.pos
-        );
+        // log::info!(
+        //     "now at grid {:?}, world {}",
+        //     self.level.world2grid(self.camera.pos),
+        //     self.camera.pos
+        // );
     }
 
     fn is_key_down(&self, key: KeyCode) -> bool {
@@ -618,8 +597,9 @@ wwwwwwwwww
         if self.movement_settings.move_light_with_camera {
             let t = self.time_since_start.as_secs_f32();
 
-            self.light.pos =
-                self.camera.pos + vec3(0.1 * f32::sin(t), -0.6 + 0.1 * f32::cos(0.7 * t), -0.1);
+            // self.light.pos =
+            //     self.camera.pos + vec3(0.1 * f32::sin(t), -0.6 + 0.1 * f32::cos(0.7 * t), -0.1);
+            self.light.pos = self.camera.pos;
             self.light.pos.y = -4.5;
             self.light.dir = self.camera.dir;
             self.objects[self.light_object_idx].pos = self.light.pos;
@@ -647,32 +627,34 @@ wwwwwwwwww
     }
 
     pub fn draw(&mut self, frame: &mut [u8]) -> RenderingResult {
-        let f = |v: Vec2| Vec3::new(v.x, -7., v.y);
-        for neighbor in self
-            .level
-            .floor_plan
-            .valid_neighbors(self.level.world2grid(self.camera.pos))
-            .iter()
-        {
-            let color = match self.level.floor_plan.at(*neighbor) {
-                GridElem::Wall => GREY,
-                GridElem::Empty => BLUE,
-                GridElem::Exhibit => GOLD,
-            };
-            let aabb = self.level.aabb(*neighbor);
+        if self.renderer.render_settings.draw_debug_lines {
+            let f = |v: Vec2| Vec3::new(v.x, -7., v.y);
+            for neighbor in self
+                .level
+                .floor_plan
+                .valid_neighbors(self.level.world2grid(self.camera.pos))
+                .iter()
+            {
+                let color = match self.level.floor_plan.at(*neighbor) {
+                    GridElem::Wall => GREY,
+                    GridElem::Empty => BLUE,
+                    GridElem::Exhibit => GOLD,
+                };
+                let aabb = self.level.aabb(*neighbor);
 
-            let p1 = aabb.min;
-            let p2 = vec2(aabb.min.x, aabb.max.y);
-            let p3 = aabb.max;
-            let p4 = vec2(aabb.max.x, aabb.min.y);
+                let p1 = aabb.min;
+                let p2 = vec2(aabb.min.x, aabb.max.y);
+                let p3 = aabb.max;
+                let p4 = vec2(aabb.max.x, aabb.min.y);
 
-            for [a, b] in [
-                [f(p1), f(p2)],
-                [f(p2), f(p3)],
-                [f(p3), f(p4)],
-                [f(p4), f(p1)],
-            ] {
-                self.renderer.debug_draw_line_in_world_space(a, b, color);
+                for [a, b] in [
+                    [f(p1), f(p2)],
+                    [f(p2), f(p3)],
+                    [f(p3), f(p4)],
+                    [f(p4), f(p1)],
+                ] {
+                    self.renderer.debug_draw_line_in_world_space(a, b, color);
+                }
             }
         }
 

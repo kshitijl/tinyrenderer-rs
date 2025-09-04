@@ -24,6 +24,7 @@ pub enum WireframeMode {
 pub struct RenderSettings {
     pub wireframe: WireframeMode,
     pub split_screen_mode: SplitScreenMode,
+    pub draw_debug_lines: bool,
 }
 
 pub struct Renderer {
@@ -49,6 +50,7 @@ impl Renderer {
             render_settings: RenderSettings {
                 split_screen_mode: SplitScreenMode::Split,
                 wireframe: WireframeMode::TrianglesOnly,
+                draw_debug_lines: false,
             },
             debug_lines: Vec::new(),
         }
@@ -171,6 +173,10 @@ impl Renderer {
         self.debug_lines.push((a, b, color))
     }
 
+    fn clipping_planes() -> (f32, f32) {
+        (0.1, 20.)
+    }
+
     fn render_debug_lines(
         self_width: usize,
         image: &mut Image,
@@ -180,8 +186,7 @@ impl Renderer {
         color: Color,
     ) {
         let canvas_size = self_width as f32;
-        let z_near = 1.;
-        let z_far = 50.;
+        let (z_near, z_far) = Self::clipping_planes();
         let m_projection = Mat4::perspective_rh_gl(f32::to_radians(60.), 1.0, z_near, z_far);
 
         let m_viewport = Mat4::from_scale(Vec3::new(canvas_size / 2.0, canvas_size / 2.0, 1.))
@@ -215,9 +220,7 @@ impl Renderer {
         let mut answer = RenderingResult::new();
 
         let canvas_size = self.width as f32;
-
-        let z_near = 1.;
-        let z_far = 50.;
+        let (z_near, z_far) = Self::clipping_planes();
         let m_projection_light = Mat4::perspective_rh_gl(f32::to_radians(70.), 1.0, z_near, z_far);
 
         let m_viewport = Mat4::from_scale(Vec3::new(canvas_size / 2.0, canvas_size / 2.0, 1.))
