@@ -1,4 +1,5 @@
 use crate::Args;
+use crate::image::{BLUE, GOLD, GREY};
 use crate::mesh::Mesh;
 use crate::render::*;
 
@@ -182,9 +183,9 @@ impl Level {
 
     fn grid2world(&self, x: usize, y: usize) -> Vec3 {
         vec3(
-            (x as f32 - 0.5) * self.grid_size,
+            (x as f32) * self.grid_size,
             -4.,
-            (y as f32 - 0.5) * self.grid_size,
+            (y as f32) * self.grid_size,
         )
     }
 
@@ -249,7 +250,7 @@ impl World {
         let g = FloorPlan::from_string(
             r#"
 wwwwwwwwww
-wwwww.wwww
+w.wwwwwwww
 wwwwwwwwww
 "#,
         );
@@ -305,6 +306,8 @@ wwwwwwwwww
             }
         };
 
+        let mut exhibit_idx = 0;
+
         for x in 0..level.floor_plan.width() {
             for y in 0..level.floor_plan.height() {
                 let mesh: Mesh;
@@ -317,15 +320,30 @@ wwwwwwwwww
                         for neighbor in level.floor_plan.valid_neighbors(usizevec2(x, y)) {
                             if level.floor_plan.at(neighbor) == GridElem::Empty {
                                 for y_offset in [-2., 0., 2.] {
-                                    objects.push(make_wall(
-                                        x,
-                                        y,
-                                        (
-                                            neighbor.x as i32 - x as i32,
-                                            neighbor.y as i32 - y as i32,
-                                        ),
-                                        y_offset,
-                                    ));
+                                    if let Some(debug_wall) = &args.wall_model_debug {
+                                        let mut model =
+                                            Mesh::from_file(debug_wall.as_str()).unwrap();
+                                        model.normalize();
+                                        objects.push(Object {
+                                            mesh: model,
+                                            pos: level.grid2world(x, y).with_y(-7.),
+                                            angle_x: 0.,
+                                            angle_y: 0.,
+                                            scale: 1.,
+                                            color: wall_color,
+                                            kind: ObjectKind::WallOrFloor,
+                                        });
+                                    } else {
+                                        objects.push(make_wall(
+                                            x,
+                                            y,
+                                            (
+                                                neighbor.x as i32 - x as i32,
+                                                neighbor.y as i32 - y as i32,
+                                            ),
+                                            y_offset,
+                                        ));
+                                    }
                                 }
                             }
                         }
@@ -356,7 +374,7 @@ wwwwwwwwww
                             color: object_color,
                             kind: ObjectKind::Exhibit,
                         });
-
+                        exhibit_idx = objects.len() - 1;
                         objects.push(make_floor(x, y));
                     }
                 }
@@ -364,7 +382,7 @@ wwwwwwwwww
         }
 
         objects.push(Object {
-            mesh: objects[0].mesh.clone(),
+            mesh: objects[exhibit_idx].mesh.clone(),
             pos: vec3(0., 0., 0.),
             angle_x: 0.,
             angle_y: 0.,
@@ -375,7 +393,7 @@ wwwwwwwwww
         let light_object_idx = objects.len() - 1;
 
         let (x_empty, y_empty) = level.floor_plan.first_empty();
-        let initial_camera_pos = level.grid2world(x_empty, y_empty) + vec3(0.2, 3., 0.2);
+        let initial_camera_pos = level.grid2world(x_empty, y_empty) + vec3(0.2, 7., 0.2);
 
         log::info!(
             "initial player position in world is {}, in grid is {}",
@@ -425,13 +443,16 @@ wwwwwwwwww
         let scale = -1e-3;
         self.camera.mouse_x = (self.camera.mouse_x + dx * scale).rem_euclid(2. * f32::consts::PI);
         self.camera.mouse_y =
-            (self.camera.mouse_y + dy * scale).clamp(-f32::consts::PI / 3., f32::consts::PI / 3.);
+            (self.camera.mouse_y + dy * scale).clamp(-f32::consts::PI / 2.1, f32::consts::PI / 3.);
     }
 
     fn move_(&mut self, dir: Direction) {
-        let speed = 0.1;
-        let forward = self.camera.dir.with_y(0.).normalize();
-        let right = forward.cross(self.camera.up);
+        let speed = 0.01;
+        // let forward = self.camera.dir.with_y(0.).normalize();
+        // let right = forward.cross(self.camera.up);
+
+        let forward = vec3(0., 0., -1.);
+        let right = vec3(1., 0., 0.);
 
         let desired_pos = match dir {
             Direction::Forward => self.camera.pos + forward * speed,
@@ -599,6 +620,7 @@ wwwwwwwwww
 
             self.light.pos =
                 self.camera.pos + vec3(0.1 * f32::sin(t), -0.6 + 0.1 * f32::cos(0.7 * t), -0.1);
+            self.light.pos.y = -4.5;
             self.light.dir = self.camera.dir;
             self.objects[self.light_object_idx].pos = self.light.pos;
         }
@@ -625,6 +647,35 @@ wwwwwwwwww
     }
 
     pub fn draw(&mut self, frame: &mut [u8]) -> RenderingResult {
+        let f = |v: Vec2| Vec3::new(v.x, -7., v.y);
+        for neighbor in self
+            .level
+            .floor_plan
+            .valid_neighbors(self.level.world2grid(self.camera.pos))
+            .iter()
+        {
+            let color = match self.level.floor_plan.at(*neighbor) {
+                GridElem::Wall => GREY,
+                GridElem::Empty => BLUE,
+                GridElem::Exhibit => GOLD,
+            };
+            let aabb = self.level.aabb(*neighbor);
+
+            let p1 = aabb.min;
+            let p2 = vec2(aabb.min.x, aabb.max.y);
+            let p3 = aabb.max;
+            let p4 = vec2(aabb.max.x, aabb.min.y);
+
+            for [a, b] in [
+                [f(p1), f(p2)],
+                [f(p2), f(p3)],
+                [f(p3), f(p4)],
+                [f(p4), f(p1)],
+            ] {
+                self.renderer.debug_draw_line_in_world_space(a, b, color);
+            }
+        }
+
         self.renderer
             .draw(&self.light, &self.camera, &self.objects, frame)
     }

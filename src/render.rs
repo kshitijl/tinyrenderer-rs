@@ -32,6 +32,7 @@ pub struct Renderer {
     depths: DepthBuffer,
     light_depths: DepthBuffer,
     pub width: usize,
+    debug_lines: Vec<(Vec3, Vec3, Color)>,
 }
 
 impl Renderer {
@@ -49,6 +50,7 @@ impl Renderer {
                 split_screen_mode: SplitScreenMode::Split,
                 wireframe: WireframeMode::TrianglesOnly,
             },
+            debug_lines: Vec::new(),
         }
     }
 
@@ -165,6 +167,44 @@ impl Renderer {
 
         answer
     }
+    pub fn debug_draw_line_in_world_space(&mut self, a: Vec3, b: Vec3, color: Color) {
+        self.debug_lines.push((a, b, color))
+    }
+
+    fn render_debug_lines(
+        self_width: usize,
+        image: &mut Image,
+        camera: &Camera,
+        a: Vec3,
+        b: Vec3,
+        color: Color,
+    ) {
+        let canvas_size = self_width as f32;
+        let z_near = 1.;
+        let z_far = 50.;
+        let m_projection = Mat4::perspective_rh_gl(f32::to_radians(60.), 1.0, z_near, z_far);
+
+        let m_viewport = Mat4::from_scale(Vec3::new(canvas_size / 2.0, canvas_size / 2.0, 1.))
+            * Mat4::from_translation(Vec3::new(1.0, 1.0, 0.0));
+        let m_view = Mat4::look_to_rh(camera.pos, camera.dir, camera.up);
+        let m_model = Mat4::IDENTITY; // points are given in world space
+
+        let m_mvp = m_projection * m_view * m_model;
+
+        let mut screen_coords: [Vec3; 2] = [Vec3::new(0., 0., 0.); 2];
+
+        for (idx, model_coordinates) in [a, b].iter().enumerate() {
+            let clip_coordinates = m_mvp * Vec4::from((*model_coordinates, 1.0));
+
+            let normalized_device_coordinates = perspective_divided(clip_coordinates);
+
+            screen_coords[idx] = (m_viewport * normalized_device_coordinates).xyz();
+        }
+
+        let [screen_a, screen_b] = screen_coords;
+
+        line::linevf32(screen_a.xy(), screen_b.xy(), image, color);
+    }
 
     fn render(
         &mut self,
@@ -250,6 +290,9 @@ impl Renderer {
             answer = answer + render_result;
         }
 
+        for (a, b, color) in self.debug_lines.iter() {
+            Self::render_debug_lines(self.width, &mut self.image, camera, *a, *b, *color);
+        }
         answer
     }
 
@@ -268,6 +311,7 @@ impl Renderer {
     ) -> RenderingResult {
         self.clear();
         let rendering_result = self.render(light, camera, objects);
+        self.debug_lines.clear();
 
         assert!(self.image.width() == self.width);
         assert!(self.image.height() == self.width);

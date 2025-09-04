@@ -11,6 +11,9 @@ pub fn colorvf(c: Vec3) -> Color {
 }
 
 pub const RED: Color = coloru8(255, 0, 0);
+pub const BLUE: Color = coloru8(0, 0, 255);
+pub const GREY: Color = coloru8(127, 127, 127);
+pub const GOLD: Color = coloru8(255, 155, 0);
 
 pub struct Image {
     buf: Vec<Color>,
