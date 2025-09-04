@@ -477,10 +477,10 @@ wwwwwww"#,
         // let right = vec3(1., 0., 0.);
 
         let desired_pos = match dir {
-            Direction::Forward => self.camera.pos + forward * speed,
-            Direction::Back => self.camera.pos - forward * speed,
-            Direction::Right => self.camera.pos + right * speed,
-            Direction::Left => self.camera.pos - right * speed,
+            Direction::Forward => self.player.pos + forward * speed,
+            Direction::Back => self.player.pos - forward * speed,
+            Direction::Right => self.player.pos + right * speed,
+            Direction::Left => self.player.pos - right * speed,
         };
 
         /*
@@ -505,21 +505,21 @@ wwwwwww"#,
 
         log::info!(
             "current: {}. desired: {}. current grid loc: {}. desired grid loc: {}",
-            self.camera.pos,
+            self.player.pos,
             desired_pos,
-            self.level.world2grid(self.camera.pos),
+            self.level.world2grid(self.player.pos),
             self.level.world2grid(desired_pos)
         );
 
         let mut current_min_distance = f32::MAX;
         let mut desired_min_distance = f32::MAX;
-        let current_grid_pos = self.level.world2grid(self.camera.pos);
+        let current_grid_pos = self.level.world2grid(self.player.pos);
         for neighbor in self.level.floor_plan.valid_neighbors(current_grid_pos) {
             match self.level.floor_plan.at(neighbor) {
                 GridElem::Wall | GridElem::Exhibit => {
                     let aabb = self.level.aabb(neighbor);
                     let desired_distance = aabb.distance(desired_pos);
-                    let current_distance = aabb.distance(self.camera.pos);
+                    let current_distance = aabb.distance(self.player.pos);
 
                     current_min_distance = f32::min(current_distance, current_min_distance);
                     desired_min_distance = f32::min(desired_distance, desired_min_distance);
@@ -534,13 +534,13 @@ wwwwwww"#,
             // do not allow
         } else {
             // log::info!("movement was allowed. new loc is {}", desired_pos);
-            self.camera.pos = desired_pos;
+            self.player.pos = desired_pos;
         }
 
         // log::info!(
         //     "now at grid {:?}, world {}",
-        //     self.level.world2grid(self.camera.pos),
-        //     self.camera.pos
+        //     self.level.world2grid(self.player.pos),
+        //     self.player.pos
         // );
     }
 
@@ -627,14 +627,13 @@ wwwwwww"#,
         if self.settings.move_light_with_player {
             if self.settings.topdown_camera {
                 self.light.dir = Mat3::from_rotation_y(self.camera.mouse_x) * vec3(0., 0., -1.);
-                self.light.pos = self.camera.pos.with_y(-3.6);
             } else {
                 self.light.dir = self.camera.dir;
-                self.light.pos = self.camera.pos.with_y(self.camera.pos.y - 0.6);
             }
+
             let t = self.time_since_start.as_secs_f32();
-            self.light.pos =
-                self.light.pos + vec3(0.1 * f32::sin(t), -0.6 + 0.1 * f32::cos(0.7 * t), -0.1);
+            self.light.pos = self.player.pos.with_y(-3.6)
+                + vec3(0.1 * f32::sin(t), -0.6 + 0.1 * f32::cos(0.7 * t), -0.1);
 
             self.objects[self.light_object_idx].pos = self.light.pos;
         }
@@ -652,13 +651,13 @@ wwwwwww"#,
             * Mat3::from_rotation_x(self.camera.mouse_y)
             * vec3(0., 0., -1.);
 
+        self.camera.pos = self.player.pos;
+
         if self.settings.topdown_camera {
             self.camera.pos.y = 7.;
         } else {
             self.camera.pos.y = -3.;
         }
-
-        self.player.pos = self.camera.pos.with_y(-3.);
     }
 
     pub fn update(
@@ -681,7 +680,7 @@ wwwwwww"#,
             for neighbor in self
                 .level
                 .floor_plan
-                .valid_neighbors(self.level.world2grid(self.camera.pos))
+                .valid_neighbors(self.level.world2grid(self.player.pos))
                 .iter()
             {
                 let color = match self.level.floor_plan.at(*neighbor) {
