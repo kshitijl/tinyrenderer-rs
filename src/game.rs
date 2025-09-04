@@ -2,7 +2,7 @@ use crate::Args;
 use crate::mesh::Mesh;
 use crate::render::*;
 
-use glam::{IVec2, Mat3, USizeVec2, Vec3, usizevec2, vec3};
+use glam::{Mat3, USizeVec2, Vec2, Vec3, usizevec2, vec2, vec3};
 use smallvec::SmallVec;
 use std::collections::HashSet;
 use std::f32;
@@ -32,9 +32,21 @@ pub struct Spotlight {
     pub dir: Vec3,
 }
 
-struct AABB2D {
-    min: IVec2,
-    max: IVec2,
+#[derive(Debug)]
+struct AABBXZ {
+    min: Vec2,
+    max: Vec2,
+}
+
+impl AABBXZ {
+    // Returns 0 is point is inside the box.
+    fn distance(&self, v: Vec3) -> f32 {
+        let (x1, y1, x2, y2) = (self.min.x, self.min.y, self.max.x, self.max.y);
+        let closest_x = v.x.clamp(x1, x2);
+        let closest_yz = v.z.clamp(y1, y2);
+
+        vec2(v.x - closest_x, v.z - closest_yz).length()
+    }
 }
 
 enum Direction {
@@ -60,88 +72,100 @@ pub struct Object {
     pub kind: ObjectKind,
 }
 
-#[derive(Copy, Clone, PartialEq)]
-enum GridElem {
-    Wall,
-    Empty,
-    Exhibit,
-}
+mod fp {
+    use super::*;
 
-struct FloorPlan {
-    width: usize,
-    height: usize,
-    grid: Vec<GridElem>,
-}
+    #[derive(Copy, Debug, Clone, PartialEq)]
+    pub enum GridElem {
+        Wall,
+        Empty,
+        Exhibit,
+    }
+    pub struct FloorPlan {
+        width: usize,
+        height: usize,
+        grid: Vec<GridElem>,
+    }
 
-impl FloorPlan {
-    // TODO invert y here and elsewhere in this 2D stuff. y=0 should mean lower
-    // on the screen. same convention as the rest of this code.
-    fn from_string(s: &str) -> Self {
-        let mut answer = Vec::new();
-        let s = s.trim();
+    impl FloorPlan {
+        pub fn from_string(s: &str) -> Self {
+            let mut answer = Vec::new();
+            let s = s.trim();
 
-        let unique_widths: HashSet<usize> = s.lines().map(|line| line.len()).collect();
+            let unique_widths: HashSet<usize> = s.lines().map(|line| line.len()).collect();
 
-        if unique_widths.len() > 1 {
-            panic!("grid not rectangular")
-        }
-        let width = *unique_widths.iter().next().unwrap();
-
-        for c in s.chars() {
-            let elem = match c {
-                'w' => Some(GridElem::Wall),
-                '.' => Some(GridElem::Empty),
-                'x' => Some(GridElem::Exhibit),
-                '\n' => None,
-                _ => panic!("unknown grid letter {}", c),
-            };
-            if let Some(e) = elem {
-                answer.push(e);
+            if unique_widths.len() > 1 {
+                panic!("grid not rectangular")
             }
-        }
+            let width = *unique_widths.iter().next().unwrap();
 
-        let height = answer.len() / width;
-
-        Self {
-            width,
-            height,
-            grid: answer,
-        }
-    }
-
-    fn valid_neighbors(&self, p: USizeVec2) -> SmallVec<[USizeVec2; 4]> {
-        let mut answer = SmallVec::new();
-
-        for (dx, dy) in [(1, 0), (-1i32, 0), (0, 1), (0, -1i32)] {
-            let (neighbor_x, neighbor_y) = (p.x as i32 + dx, p.y as i32 + dy);
-            if self.is_valid(neighbor_x, neighbor_y) {
-                answer.push(usizevec2(neighbor_x as usize, neighbor_y as usize));
-            }
-        }
-
-        answer
-    }
-
-    fn at(&self, x: usize, y: usize) -> GridElem {
-        self.grid[y * self.width + x]
-    }
-
-    fn is_valid(&self, x: i32, y: i32) -> bool {
-        x >= 0 && y >= 0 && x < self.width as i32 && y < self.height as i32
-    }
-
-    fn first_empty(&self) -> (usize, usize) {
-        for y in 0..self.height {
-            for x in 0..self.width {
-                if self.at(x, y) == GridElem::Empty {
-                    return (x, y);
+            for c in s.chars() {
+                let elem = match c {
+                    'w' => Some(GridElem::Wall),
+                    '.' => Some(GridElem::Empty),
+                    'x' => Some(GridElem::Exhibit),
+                    '\n' => None,
+                    _ => panic!("unknown grid letter {}", c),
+                };
+                if let Some(e) = elem {
+                    answer.push(e);
                 }
             }
+
+            let height = answer.len() / width;
+
+            Self {
+                width,
+                height,
+                grid: answer,
+            }
         }
 
-        panic!("no empty");
+        pub fn height(&self) -> usize {
+            self.height
+        }
+
+        pub fn width(&self) -> usize {
+            self.width
+        }
+
+        pub fn valid_neighbors(&self, p: USizeVec2) -> SmallVec<[USizeVec2; 4]> {
+            let mut answer = SmallVec::new();
+
+            for (dx, dy) in [(1, 0), (-1i32, 0), (0, 1), (0, -1i32)] {
+                let (neighbor_x, neighbor_y) = (p.x as i32 + dx, p.y as i32 + dy);
+                if self.is_valid(neighbor_x, neighbor_y) {
+                    answer.push(usizevec2(neighbor_x as usize, neighbor_y as usize));
+                }
+            }
+
+            answer
+        }
+
+        pub fn at(&self, p: USizeVec2) -> GridElem {
+            let y = self.height - p.y - 1;
+            self.grid[y * self.width + p.x]
+        }
+
+        fn is_valid(&self, x: i32, y: i32) -> bool {
+            x >= 0 && y >= 0 && x < self.width as i32 && y < self.height as i32
+        }
+
+        pub fn first_empty(&self) -> (usize, usize) {
+            for y in 0..self.height {
+                for x in 0..self.width {
+                    if self.at(usizevec2(x, y)) == GridElem::Empty {
+                        return (x, y);
+                    }
+                }
+            }
+
+            panic!("no empty");
+        }
     }
 }
+
+use fp::{FloorPlan, GridElem};
 
 struct Level {
     floor_plan: FloorPlan,
@@ -157,14 +181,31 @@ impl Level {
     }
 
     fn grid2world(&self, x: usize, y: usize) -> Vec3 {
-        vec3(x as f32 * self.grid_size, -4., y as f32 * self.grid_size)
+        vec3(
+            (x as f32 - 0.5) * self.grid_size,
+            -4.,
+            (y as f32 - 0.5) * self.grid_size,
+        )
     }
 
-    fn world2grid(&self, v: Vec3) -> (usize, usize) {
+    fn world2grid(&self, v: Vec3) -> USizeVec2 {
         let x = (v.x / self.grid_size).round();
         let y = (v.z / self.grid_size).round();
 
-        (x as usize, y as usize)
+        usizevec2(x as usize, y as usize)
+    }
+
+    fn aabb(&self, p: USizeVec2) -> AABBXZ {
+        AABBXZ {
+            min: vec2(
+                (p.x as f32 - 0.5) * self.grid_size,
+                (p.y as f32 - 0.5) * self.grid_size,
+            ),
+            max: vec2(
+                (p.x as f32 + 0.5) * self.grid_size,
+                (p.y as f32 + 0.5) * self.grid_size,
+            ),
+        }
     }
 }
 
@@ -191,19 +232,36 @@ impl World {
     pub fn new(args: &Args) -> Self {
         let mut objects = Vec::new();
 
+        //         let g = FloorPlan::from_string(
+        //             r#"
+        // wwwwwwwww
+        // w...wwwww
+        // w..w.wwww
+        // w..w...ww
+        // w..w...ww
+        // w..w...ww
+        // w.......w
+        // w...x...w
+        // w.......w
+        // wwwwwwwww"#,
+        //         );
+
         let g = FloorPlan::from_string(
             r#"
-wwwwwwwww
-w...wwwww
-w.ww.wwww
-w.ww...ww
-w.ww...ww
-w.ww...ww
-w.......w
-w...x...w
-w.......w
-wwwwwwwww"#,
+wwwwwwwwww
+wwwww.wwww
+wwwwwwwwww
+"#,
         );
+
+        for y in 0..g.height() {
+            for x in 0..g.width() {
+                println!("({},{}) {:?} ", x, y, g.at(usizevec2(x, y)));
+            }
+            println!("");
+        }
+
+        println!("exhibit at 4,2 {:?}", g.at(usizevec2(4, 2)));
 
         let level = Level::new(g, 2.);
         let wall_color = Colorf(vec3(0.5, 0.5, 0.5));
@@ -247,17 +305,17 @@ wwwwwwwww"#,
             }
         };
 
-        for x in 0..level.floor_plan.width {
-            for y in 0..level.floor_plan.height {
+        for x in 0..level.floor_plan.width() {
+            for y in 0..level.floor_plan.height() {
                 let mesh: Mesh;
                 let angle_x = 0.;
                 let object_color: Colorf;
                 let y_offset = 0.;
 
-                match level.floor_plan.at(x, y) {
+                match level.floor_plan.at(usizevec2(x, y)) {
                     GridElem::Wall => {
                         for neighbor in level.floor_plan.valid_neighbors(usizevec2(x, y)) {
-                            if level.floor_plan.at(neighbor.x, neighbor.y) == GridElem::Empty {
+                            if level.floor_plan.at(neighbor) == GridElem::Empty {
                                 for y_offset in [-2., 0., 2.] {
                                     objects.push(make_wall(
                                         x,
@@ -280,10 +338,18 @@ wwwwwwwww"#,
                         model.normalize();
                         mesh = model;
                         object_color = exhibits_color;
+                        let pos = level.grid2world(x, y) + vec3(0., y_offset, 0.);
+                        assert!(level.world2grid(pos) == usizevec2(x, y));
 
+                        log::info!(
+                            "instantiating exhibit at {}, world {}, aabb {:?}",
+                            usizevec2(x, y),
+                            pos,
+                            level.aabb(usizevec2(x, y))
+                        );
                         objects.push(Object {
                             mesh,
-                            pos: level.grid2world(x, y) + vec3(0., y_offset, 0.),
+                            pos,
                             angle_x,
                             angle_y: 0.,
                             scale: 1.,
@@ -309,7 +375,14 @@ wwwwwwwww"#,
         let light_object_idx = objects.len() - 1;
 
         let (x_empty, y_empty) = level.floor_plan.first_empty();
-        let initial_camera_pos = level.grid2world(x_empty, y_empty) + vec3(0., 0.2, 0.);
+        let initial_camera_pos = level.grid2world(x_empty, y_empty) + vec3(0.2, 3., 0.2);
+
+        log::info!(
+            "initial player position in world is {}, in grid is {}",
+            initial_camera_pos,
+            level.world2grid(initial_camera_pos)
+        );
+
         let camera_dir = Vec3::ZERO;
 
         let light = Spotlight {
@@ -377,6 +450,7 @@ wwwwwwwww"#,
         possible collider. If any distance is below epsilon, reject motion.
 
         TODO what if guards trap the player lol?
+        TODO allow motion all the way up to the boundary but not beyond
 
         Details:
          - iterate over possible colliders: nearby walls and exhibits; all guards
@@ -384,18 +458,62 @@ wwwwwwwww"#,
          - find the distance from desired pos to each AABB
          - if any distance < epsilon then reject motion
         */
-        let (grid_x, grid_y) = self.level.world2grid(desired_pos);
-        match self.level.floor_plan.at(grid_x, grid_y) {
-            GridElem::Wall => {
-                // don't allow
-            }
-            GridElem::Exhibit => {
-                // don't allow
-            }
-            GridElem::Empty => {
-                self.camera.pos = desired_pos;
+        #[derive(PartialEq)]
+        enum MotionDecision {
+            Allow,
+            Reject,
+        }
+        let eps = 0.1;
+
+        log::info!(
+            "current: {}. desired: {}. current grid loc: {}. desired grid loc: {}",
+            self.camera.pos,
+            desired_pos,
+            self.level.world2grid(self.camera.pos),
+            self.level.world2grid(desired_pos)
+        );
+
+        let mut decision = MotionDecision::Allow;
+        let current_grid_pos = self.level.world2grid(self.camera.pos);
+        for neighbor in self.level.floor_plan.valid_neighbors(current_grid_pos) {
+            match self.level.floor_plan.at(neighbor) {
+                GridElem::Wall | GridElem::Exhibit => {
+                    let aabb = self.level.aabb(neighbor);
+                    let distance = aabb.distance(desired_pos);
+                    log::info!(
+                        "consider neighbor {:?} with aabb {:?}, current distance {}, desired distance {}",
+                        neighbor,
+                        aabb,
+                        aabb.distance(self.camera.pos),
+                        aabb.distance(desired_pos)
+                    );
+                    if distance < eps {
+                        decision = MotionDecision::Reject;
+                        break;
+                    }
+                }
+                GridElem::Empty => {
+                    // do nothing, always allow
+                }
             }
         }
+
+        if decision == MotionDecision::Allow {
+            log::info!("movement was allowed. new loc is {}", desired_pos);
+            self.camera.pos = desired_pos;
+        }
+        // let (grid_x, grid_y) = self.level.world2grid(desired_pos);
+        // match self.level.floor_plan.at(grid_x, grid_y) {
+        //     GridElem::Wall => {
+        //         // don't allow
+        //     }
+        //     GridElem::Exhibit => {
+        //         // don't allow
+        //     }
+        //     GridElem::Empty => {
+        //         self.camera.pos = desired_pos;
+        //     }
+        // }
 
         log::info!(
             "now at grid {:?}, world {}",
@@ -532,8 +650,24 @@ w.......w
 wwwwwwwww"#,
         );
 
-        assert_eq!(g.width, 9);
-        assert_eq!(g.height, 10);
+        assert_eq!(g.width(), 9);
+        assert_eq!(g.height(), 10);
         assert_eq!(g.first_empty(), (1, 1));
+    }
+
+    #[test]
+    fn it_computes_aabb_distances() {
+        let aabb = AABBXZ {
+            min: vec2(1.0, 1.0),
+            max: vec2(3.0, 3.0),
+        };
+
+        assert_eq!(aabb.distance(vec3(1., 1., 1.)), 0.);
+        assert_eq!(aabb.distance(vec3(1., 100., 1.)), 0.);
+        assert!((aabb.distance(vec3(0.5, 100., 0.5)) - 0.5f32.sqrt()).abs() < 1e-6);
+        assert_eq!(aabb.distance(vec3(1.5, 100., 0.5)), 0.5);
+        assert_eq!(aabb.distance(vec3(1.5, 100., 2.7)), 0.);
+        assert_eq!(aabb.distance(vec3(1.5, 100., 2.75)), 0.);
+        assert_eq!(aabb.distance(vec3(2.0, 100., 6.)), 3.);
     }
 }
