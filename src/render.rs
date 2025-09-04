@@ -574,7 +574,7 @@ impl<'buf> Shader for FinalRenderShader<'buf> {
         }
         let spotlight_factor = light_to_pixel_normalized.dot(light_dir);
         // let spotlight_factor = 1.;
-        let spotlight_factor = step(0.9, spotlight_factor);
+        let spotlight_factor = smoothstep(0.88, 0.92, spotlight_factor);
         // let spotlight_factor = smoothstep(0.8, 1., spotlight_factor);
         // let distance_factor = (40. / light_to_pixel_distance.powf(2.)).clamp(0., 1.);
         let distance_factor = 1.;
