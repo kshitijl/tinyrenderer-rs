@@ -47,7 +47,7 @@ impl Renderer {
             light_depths,
             width: canvas_size as usize,
             render_settings: RenderSettings {
-                split_screen_mode: SplitScreenMode::Split,
+                split_screen_mode: SplitScreenMode::Normal,
                 wireframe: WireframeMode::TrianglesOnly,
             },
             debug_lines: Vec::new(),
@@ -308,7 +308,7 @@ impl Renderer {
     }
 
     fn clear(&mut self) {
-        self.image.clear(coloru8(0xff, 0xaa, 0xaa));
+        self.image.clear(coloru8(0x00, 0x00, 0x35));
         self.depths.clear();
         self.light_depths.clear();
     }
@@ -550,17 +550,23 @@ impl<'buf> Shader for FinalRenderShader<'buf> {
 
         let this_pixel_world_coords = alpha * wa + beta * wb + gamma * wc;
 
-        let light_to_pixel =
-            (this_pixel_world_coords - Vec4::from((self.spotlight.pos, 1.))).normalize();
-        // light_dir is in the world coordinates, so we don't need to transform it.
-        let light_dir = Vec4::from((self.spotlight.dir, 0.));
+        let light_to_pixel = this_pixel_world_coords - Vec4::from((self.spotlight.pos, 1.));
+        let light_to_pixel_distance = light_to_pixel.length();
+        let light_to_pixel_normalized = light_to_pixel / light_to_pixel_distance;
 
-        let spotlight_intensity = light_to_pixel.dot(light_dir).clamp(0., 1.).powf(25.);
+        // light_dir is in the world coordinates, so we don't need to transform it.
+        let light_dir = Vec4::from((self.spotlight.dir, 0.)).normalize();
+
+        let spotlight_factor = light_to_pixel_normalized
+            .dot(light_dir)
+            .clamp(0., 1.)
+            .powf(55.);
+        let distance_factor = (40. / light_to_pixel_distance.powf(2.)).clamp(0., 1.);
 
         let this_pixel_normal = alpha * na + beta * nb + gamma * nc;
         let dir_intensity = this_pixel_normal.dot(-light_dir).clamp(0., 1.);
-        let dir_intensity = (dir_intensity * 6.).round() / 6.;
-        let dir_intensity = dir_intensity * spotlight_intensity;
+        // let dir_intensity = (dir_intensity * 6.).round() / 6.;
+        let dir_intensity = dir_intensity * spotlight_factor * distance_factor;
         let dir_intensity = dir_intensity * (1. - ambient_intensity);
 
         let total_intensity = ambient_intensity + dir_intensity;
