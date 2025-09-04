@@ -575,6 +575,23 @@ wwwwwww"#,
             self.renderer.render_settings.wireframe =
                 self.renderer.render_settings.wireframe.next();
         }
+        if self.was_key_pressed(KeyCode::Digit2) {
+            self.settings.topdown_camera = !self.settings.topdown_camera;
+
+            self.objects[self.light_object_idx].visible =
+                self.settings.topdown_camera || !self.settings.move_light_with_player;
+
+            let a = self.player.pos;
+            let p = self.level.world2grid(self.player.pos);
+            let b = self.level.grid2world(p.x, p.y);
+            log::info!(
+                "player at {}. on grid {}, back on world {}, aabb {:?}",
+                a,
+                p,
+                b,
+                self.level.aabb(p)
+            );
+        }
         if self.was_key_pressed(KeyCode::Digit3) {
             self.settings.move_light_with_player = !self.settings.move_light_with_player;
         }
@@ -595,12 +612,6 @@ wwwwwww"#,
         }
         if self.was_key_pressed(KeyCode::Digit6) {
             self.settings.draw_debug_lines = !self.settings.draw_debug_lines;
-        }
-        if self.was_key_pressed(KeyCode::Digit7) {
-            self.settings.topdown_camera = !self.settings.topdown_camera;
-
-            self.objects[self.light_object_idx].visible =
-                self.settings.topdown_camera || !self.settings.move_light_with_player;
         }
 
         self.first_pressed_this_frame.clear();
@@ -708,9 +719,9 @@ wwwwwww"#,
                     .debug_draw_line_in_world_space(self.player.pos, f(p1), BLACK);
             }
 
-            let a = self.player.pos;
+            let a = self.player.pos.with_y(-7.);
             let p = self.level.world2grid(self.player.pos);
-            let b = self.level.grid2world(p.x, p.y);
+            let b = self.level.grid2world(p.x, p.y).with_y(-7.);
             self.renderer.debug_draw_line_in_world_space(a, b, BLACK);
         }
 
