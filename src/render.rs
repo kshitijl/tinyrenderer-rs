@@ -537,7 +537,7 @@ impl<'buf> Shader for FinalRenderShader<'buf> {
         b: BaryCoords,
     ) -> Color {
         let (alpha, beta, gamma) = (b.0.x, b.0.y, b.0.z);
-        let ambient_intensity = 0.3;
+        let ambient_intensity = 0.2;
         let (na, nb, nc) = (varyings[0].normal, varyings[1].normal, varyings[2].normal);
         let (wa, wb, wc) = (
             varyings[0].world_coord,
@@ -552,17 +552,16 @@ impl<'buf> Shader for FinalRenderShader<'buf> {
 
         let light_to_pixel =
             (this_pixel_world_coords - Vec4::from((self.spotlight.pos, 1.))).normalize();
-        // let light_dir = (object_pos - Vec4::from((self.light_pos, 1.))).normalize();
         // light_dir is in the world coordinates, so we don't need to transform it.
         let light_dir = Vec4::from((self.spotlight.dir, 0.));
 
-        let spotlight_intensity = light_to_pixel.dot(light_dir).clamp(0., 1.).powf(3.);
+        let spotlight_intensity = light_to_pixel.dot(light_dir).clamp(0., 1.).powf(25.);
 
         let this_pixel_normal = alpha * na + beta * nb + gamma * nc;
         let dir_intensity = this_pixel_normal.dot(-light_dir).clamp(0., 1.);
-        // let dir_intensity = (dir_intensity * 6.).round() / 6.;
-        let dir_intensity = dir_intensity * (1. - ambient_intensity);
+        let dir_intensity = (dir_intensity * 6.).round() / 6.;
         let dir_intensity = dir_intensity * spotlight_intensity;
+        let dir_intensity = dir_intensity * (1. - ambient_intensity);
 
         let total_intensity = ambient_intensity + dir_intensity;
         let object_color = self.objects[object_idx].color.0;
