@@ -554,16 +554,30 @@ impl<'buf> Shader for FinalRenderShader<'buf> {
         let light_to_pixel_distance = light_to_pixel.length();
         let light_to_pixel_normalized = light_to_pixel / light_to_pixel_distance;
 
+        fn assert_normalized(x: Vec4) {
+            assert!((x.length() - 1.).abs() < 1e-6)
+        }
+        assert_normalized(light_to_pixel_normalized);
         // light_dir is in the world coordinates, so we don't need to transform it.
         let light_dir = Vec4::from((self.spotlight.dir, 0.)).normalize();
+        assert_normalized(light_dir);
 
         // TODO implement glsl smoothstep to do this with a sharp beautiful cutoff
         // TODO put some color diffraction effect at the edges so it looks cool
-        let spotlight_factor = light_to_pixel_normalized
-            .dot(light_dir)
-            .clamp(0., 1.)
-            .powf(55.);
-        let distance_factor = (40. / light_to_pixel_distance.powf(2.)).clamp(0., 1.);
+
+        fn smoothstep(edge0: f32, edge1: f32, t: f32) -> f32 {
+            let t = ((t - edge0) / (edge1 - edge0)).clamp(0., 1.);
+            t * t * (3. - 2. * t)
+        }
+        fn step(edge: f32, t: f32) -> f32 {
+            if t < edge { 0. } else { 1. }
+        }
+        let spotlight_factor = light_to_pixel_normalized.dot(light_dir);
+        // let spotlight_factor = 1.;
+        let spotlight_factor = step(0.9, spotlight_factor);
+        // let spotlight_factor = smoothstep(0.8, 1., spotlight_factor);
+        // let distance_factor = (40. / light_to_pixel_distance.powf(2.)).clamp(0., 1.);
+        let distance_factor = 1.;
 
         let this_pixel_normal = alpha * na + beta * nb + gamma * nc;
         let dir_intensity = this_pixel_normal.dot(-light_dir).clamp(0., 1.);
