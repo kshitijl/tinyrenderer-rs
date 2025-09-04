@@ -548,22 +548,25 @@ impl<'buf> Shader for FinalRenderShader<'buf> {
         let width = self.light_pov_depths.width();
         let height = self.light_pov_depths.height();
 
-        let object_pos = alpha * wa + beta * wb + gamma * wc;
+        let this_pixel_world_coords = alpha * wa + beta * wb + gamma * wc;
 
+        let light_to_pixel =
+            (this_pixel_world_coords - Vec4::from((self.spotlight.pos, 1.))).normalize();
         // let light_dir = (object_pos - Vec4::from((self.light_pos, 1.))).normalize();
         // light_dir is in the world coordinates, so we don't need to transform it.
         let light_dir = Vec4::from((self.spotlight.dir, 0.));
 
-        let normal = alpha * na + beta * nb + gamma * nc;
-        let dir_intensity = normal.dot(-light_dir).clamp(0., 1.);
+        let spotlight_intensity = light_to_pixel.dot(light_dir).clamp(0., 1.).powf(3.);
+
+        let this_pixel_normal = alpha * na + beta * nb + gamma * nc;
+        let dir_intensity = this_pixel_normal.dot(-light_dir).clamp(0., 1.);
         // let dir_intensity = (dir_intensity * 6.).round() / 6.;
         let dir_intensity = dir_intensity * (1. - ambient_intensity);
+        let dir_intensity = dir_intensity * spotlight_intensity;
 
         let total_intensity = ambient_intensity + dir_intensity;
         let object_color = self.objects[object_idx].color.0;
         let mut color = object_color * total_intensity;
-
-        let this_pixel_world_coords = alpha * wa + beta * wb + gamma * wc;
 
         let this_pixel_clip_coords = self.light_vp * this_pixel_world_coords;
         let this_pixel_ndc = perspective_divided(this_pixel_clip_coords);
