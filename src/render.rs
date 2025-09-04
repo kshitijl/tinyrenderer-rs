@@ -557,6 +557,8 @@ impl<'buf> Shader for FinalRenderShader<'buf> {
         // light_dir is in the world coordinates, so we don't need to transform it.
         let light_dir = Vec4::from((self.spotlight.dir, 0.)).normalize();
 
+        // TODO implement glsl smoothstep to do this with a sharp beautiful cutoff
+        // TODO put some color diffraction effect at the edges so it looks cool
         let spotlight_factor = light_to_pixel_normalized
             .dot(light_dir)
             .clamp(0., 1.)
