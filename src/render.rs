@@ -569,12 +569,9 @@ impl<'buf> Shader for FinalRenderShader<'buf> {
             let t = ((t - edge0) / (edge1 - edge0)).clamp(0., 1.);
             t * t * (3. - 2. * t)
         }
-        fn step(edge: f32, t: f32) -> f32 {
-            if t < edge { 0. } else { 1. }
-        }
         let spotlight_factor = light_to_pixel_normalized.dot(light_dir);
         // let spotlight_factor = 1.;
-        let spotlight_factor = smoothstep(0.88, 0.92, spotlight_factor);
+        let spotlight_factor = smoothstep(0.93, 0.94, spotlight_factor);
         // let spotlight_factor = smoothstep(0.8, 1., spotlight_factor);
         // let distance_factor = (40. / light_to_pixel_distance.powf(2.)).clamp(0., 1.);
         let distance_factor = 1.;
