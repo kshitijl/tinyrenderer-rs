@@ -1,5 +1,5 @@
 use crate::Args;
-use crate::image::{BLUE, GOLD, GREY};
+use crate::image::{BLACK, BLUE, GOLD, GREY};
 use crate::mesh::Mesh;
 use crate::render::*;
 
@@ -17,7 +17,7 @@ pub enum ResolutionChangeAction {
 
 struct Settings {
     rotate_objects: bool,
-    move_light_with_camera: bool,
+    move_light_with_player: bool,
     topdown_camera: bool,
     draw_debug_lines: bool,
 }
@@ -448,7 +448,7 @@ wwwwwww"#,
             angle_time: Duration::from_secs(0),
             settings: Settings {
                 rotate_objects: false,
-                move_light_with_camera: true,
+                move_light_with_player: true,
                 topdown_camera: false,
                 draw_debug_lines: false,
             },
@@ -576,7 +576,7 @@ wwwwwww"#,
                 self.renderer.render_settings.wireframe.next();
         }
         if self.was_key_pressed(KeyCode::Digit3) {
-            self.settings.move_light_with_camera = !self.settings.move_light_with_camera;
+            self.settings.move_light_with_player = !self.settings.move_light_with_player;
         }
         if self.was_key_pressed(KeyCode::Digit4) {
             self.settings.rotate_objects = !self.settings.rotate_objects;
@@ -600,7 +600,7 @@ wwwwwww"#,
             self.settings.topdown_camera = !self.settings.topdown_camera;
 
             self.objects[self.light_object_idx].visible =
-                self.settings.topdown_camera || !self.settings.move_light_with_camera;
+                self.settings.topdown_camera || !self.settings.move_light_with_player;
         }
 
         self.first_pressed_this_frame.clear();
@@ -624,12 +624,7 @@ wwwwwww"#,
             }
         }
 
-        if self.settings.move_light_with_camera {
-            let t = self.time_since_start.as_secs_f32();
-
-            // self.light.pos =
-            //     self.camera.pos + vec3(0.1 * f32::sin(t), -0.6 + 0.1 * f32::cos(0.7 * t), -0.1);
-
+        if self.settings.move_light_with_player {
             if self.settings.topdown_camera {
                 self.light.dir = Mat3::from_rotation_y(self.camera.mouse_x) * vec3(0., 0., -1.);
                 self.light.pos = self.camera.pos.with_y(-3.6);
@@ -637,6 +632,9 @@ wwwwwww"#,
                 self.light.dir = self.camera.dir;
                 self.light.pos = self.camera.pos.with_y(self.camera.pos.y - 0.6);
             }
+            let t = self.time_since_start.as_secs_f32();
+            self.light.pos =
+                self.light.pos + vec3(0.1 * f32::sin(t), -0.6 + 0.1 * f32::cos(0.7 * t), -0.1);
 
             self.objects[self.light_object_idx].pos = self.light.pos;
         }
@@ -659,6 +657,8 @@ wwwwwww"#,
         } else {
             self.camera.pos.y = -3.;
         }
+
+        self.player.pos = self.camera.pos.with_y(-3.);
     }
 
     pub fn update(
@@ -704,7 +704,15 @@ wwwwwww"#,
                 ] {
                     self.renderer.debug_draw_line_in_world_space(a, b, color);
                 }
+
+                self.renderer
+                    .debug_draw_line_in_world_space(self.player.pos, f(p1), BLACK);
             }
+
+            let a = self.player.pos;
+            let p = self.level.world2grid(self.player.pos);
+            let b = self.level.grid2world(p.x, p.y);
+            self.renderer.debug_draw_line_in_world_space(a, b, BLACK);
         }
 
         self.renderer
