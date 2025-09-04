@@ -183,7 +183,7 @@ impl ApplicationHandler for App {
 #[derive(Parser)]
 struct Args {
     #[arg(short, long, default_value = "assets/head.obj")]
-    exhibit_model: String,
+    exhibit_models: Vec<String>,
 
     #[arg(short, long)]
     wall_model_debug: Option<String>,

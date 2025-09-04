@@ -30,6 +30,7 @@ pub struct Camera {
     mouse_y: f32,
 }
 
+#[derive(Copy, Clone)]
 pub struct Spotlight {
     pub pos: Vec3,
     pub dir: Vec3,
@@ -104,16 +105,18 @@ mod fp {
             }
             let width = *unique_widths.iter().next().unwrap();
 
-            for c in s.chars() {
-                let elem = match c {
-                    'w' => Some(GridElem::Wall),
-                    '.' => Some(GridElem::Empty),
-                    'x' => Some(GridElem::Exhibit),
-                    '\n' => None,
-                    _ => panic!("unknown grid letter {}", c),
-                };
-                if let Some(e) = elem {
-                    answer.push(e);
+            for line in s.lines() {
+                for c in line.chars().rev() {
+                    let elem = match c {
+                        'w' => Some(GridElem::Wall),
+                        '.' => Some(GridElem::Empty),
+                        'x' => Some(GridElem::Exhibit),
+                        '\n' => None,
+                        _ => panic!("unknown grid letter {}", c),
+                    };
+                    if let Some(e) = elem {
+                        answer.push(e);
+                    }
                 }
             }
 
@@ -244,16 +247,18 @@ impl World {
 
         let g = FloorPlan::from_string(
             r#"
-wwwwwww
-w...www
-w..w.ww
-w..w..w
-w..w..w
-w..w..w
-w.....w
-w...x.w
-w.....w
-wwwwwww"#,
+wwwwwwwwwwwww
+w.....wwwwwww
+w..x..wwwwwww
+w....wwwwwwww
+w..ww......ww
+w..w....x...w
+w..w........w
+w..w....x...w
+w...........w
+w.......x...w
+w...........w
+wwwwwwwwwwwww"#,
         );
 
         // //         let g = FloorPlan::from_string(
@@ -319,6 +324,8 @@ wwwwwww"#,
 
         let mut exhibit_idx = 0;
 
+        let mut exhibit_models = args.exhibit_models.iter().cycle();
+
         for x in 0..level.floor_plan.width() {
             for y in 0..level.floor_plan.height() {
                 let mesh: Mesh;
@@ -364,7 +371,8 @@ wwwwwww"#,
                         objects.push(make_floor(x, y));
                     }
                     GridElem::Exhibit => {
-                        let mut model = Mesh::from_file(args.exhibit_model.as_str()).unwrap();
+                        let mut model =
+                            Mesh::from_file(exhibit_models.next().unwrap().as_str()).unwrap();
                         model.normalize();
                         mesh = model;
                         object_color = exhibits_color;
@@ -467,8 +475,8 @@ wwwwwww"#,
         self.camera.mouse_y += dy * scale;
     }
 
-    fn move_(&mut self, dir: Direction) {
-        let speed = 0.1;
+    fn move_(&mut self, dir: Direction, since_last_frame: Duration) {
+        let speed = 10. * since_last_frame.as_secs_f32();
 
         let forward = self.camera.dir.with_y(0.).normalize();
         let right = forward.cross(self.camera.up);
@@ -552,23 +560,23 @@ wwwwwww"#,
         self.first_pressed_this_frame.contains(&key)
     }
 
-    fn handle_keys(&mut self) -> ResolutionChangeAction {
+    fn handle_keys(&mut self, since_last_frame: Duration) -> ResolutionChangeAction {
         let mut answer = ResolutionChangeAction::DoNothing;
 
         if self.is_key_down(KeyCode::KeyW) {
-            self.move_(Direction::Forward);
+            self.move_(Direction::Forward, since_last_frame);
         }
 
         if self.is_key_down(KeyCode::KeyS) {
-            self.move_(Direction::Back);
+            self.move_(Direction::Back, since_last_frame);
         }
 
         if self.is_key_down(KeyCode::KeyA) {
-            self.move_(Direction::Left);
+            self.move_(Direction::Left, since_last_frame);
         }
 
         if self.is_key_down(KeyCode::KeyD) {
-            self.move_(Direction::Right);
+            self.move_(Direction::Right, since_last_frame);
         }
 
         if self.was_key_pressed(KeyCode::Digit1) {
@@ -580,6 +588,10 @@ wwwwwww"#,
 
             self.objects[self.light_object_idx].visible =
                 self.settings.topdown_camera || !self.settings.move_light_with_player;
+
+            if !self.settings.topdown_camera {
+                self.camera.mouse_y = 0.;
+            }
 
             let a = self.player.pos;
             let p = self.level.world2grid(self.player.pos);
@@ -650,12 +662,16 @@ wwwwwww"#,
         }
     }
 
-    fn update_camera(&mut self) {
-        let (y1, y2) = if self.settings.topdown_camera {
-            (-f32::consts::PI / 2.1, -f32::consts::PI / 2.6)
+    fn y_angle_clamp(topdown_camera: bool) -> (f32, f32) {
+        if topdown_camera {
+            (-f32::consts::PI / 2.1, -f32::consts::PI / 3.)
         } else {
             (-f32::consts::PI / 2.1, f32::consts::PI / 3.)
-        };
+        }
+    }
+
+    fn update_camera(&mut self) {
+        let (y1, y2) = Self::y_angle_clamp(self.settings.topdown_camera);
         self.camera.mouse_y = self.camera.mouse_y.clamp(y1, y2);
 
         self.camera.dir = Mat3::from_rotation_y(self.camera.mouse_x)
@@ -678,7 +694,7 @@ wwwwwww"#,
     ) -> ResolutionChangeAction {
         self.time_since_start = since_start;
 
-        let answer = self.handle_keys();
+        let answer = self.handle_keys(since_last_frame);
         self.update_camera();
         self.animate_objects(since_last_frame);
 

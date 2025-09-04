@@ -171,8 +171,12 @@ impl Renderer {
         self.debug_lines.push((a, b, color))
     }
 
+    // TODO make this different depending on topdown, FPS and shadow camera
+    //
+    // for shadow camera we want the near clipping plane further away so we can
+    // have more precision over the whole range
     fn clipping_planes() -> (f32, f32) {
-        (0.1, 20.)
+        (1., 25.)
     }
 
     fn render_debug_lines(
@@ -262,7 +266,7 @@ impl Renderer {
 
         // Now the final render
         let final_render = FinalRenderShader::new(
-            light.pos,
+            *light,
             light_uniforms.m_projection * light_uniforms.m_view,
             light_uniforms.m_viewport,
             &self.light_depths,
@@ -502,7 +506,7 @@ impl NoopShaderColorsWhite {
 }
 
 struct FinalRenderShader<'buf> {
-    light_pos: Vec3,
+    spotlight: Spotlight,
     light_vp: Mat4,
     light_viewport: Mat4,
     light_pov_depths: &'buf DepthBuffer,
@@ -546,13 +550,13 @@ impl<'buf> Shader for FinalRenderShader<'buf> {
 
         let object_pos = alpha * wa + beta * wb + gamma * wc;
 
-        let light_dir = (object_pos - Vec4::from((self.light_pos, 1.))).normalize();
-        let m_light_to_world = Mat4::IDENTITY;
-        let transformed_light_dir = m_light_to_world * light_dir;
+        // let light_dir = (object_pos - Vec4::from((self.light_pos, 1.))).normalize();
+        // light_dir is in the world coordinates, so we don't need to transform it.
+        let light_dir = Vec4::from((self.spotlight.dir, 0.));
 
         let normal = alpha * na + beta * nb + gamma * nc;
-        let dir_intensity = normal.dot(-transformed_light_dir).clamp(0., 1.);
-        let dir_intensity = (dir_intensity * 6.).round() / 6.;
+        let dir_intensity = normal.dot(-light_dir).clamp(0., 1.);
+        // let dir_intensity = (dir_intensity * 6.).round() / 6.;
         let dir_intensity = dir_intensity * (1. - ambient_intensity);
 
         let total_intensity = ambient_intensity + dir_intensity;
@@ -586,14 +590,14 @@ impl<'buf> Shader for FinalRenderShader<'buf> {
 
 impl<'buf> FinalRenderShader<'buf> {
     fn new(
-        light_pos: Vec3,
+        spotlight: Spotlight,
         light_vp: Mat4,
         light_viewport: Mat4,
         light_pov_depths: &'buf DepthBuffer,
         objects: &'buf Vec<Object>,
     ) -> Self {
         Self {
-            light_pos,
+            spotlight,
             light_vp,
             light_viewport,
             light_pov_depths,
