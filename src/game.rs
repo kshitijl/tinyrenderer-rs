@@ -15,9 +15,11 @@ pub enum ResolutionChangeAction {
     ChangeTo { x: u32, y: u32 },
 }
 
-struct MovementSettings {
+struct Settings {
     rotate_objects: bool,
     move_light_with_camera: bool,
+    topdown_camera: bool,
+    draw_debug_lines: bool,
 }
 
 pub struct Camera {
@@ -57,6 +59,7 @@ enum Direction {
     Left,
 }
 
+#[derive(PartialEq)]
 pub enum ObjectKind {
     Light,
     Exhibit,
@@ -71,6 +74,7 @@ pub struct Object {
     pub scale: f32,
     pub color: Colorf,
     pub kind: ObjectKind,
+    pub visible: bool,
 }
 
 mod fp {
@@ -210,15 +214,20 @@ impl Level {
     }
 }
 
+struct Player {
+    pos: Vec3,
+}
+
 pub struct World {
     renderer: Renderer,
-    movement_settings: MovementSettings,
+    settings: Settings,
 
     camera: Camera,
 
     light: Spotlight,
     light_object_idx: usize,
 
+    player: Player,
     objects: Vec<Object>,
     level: Level,
 
@@ -283,6 +292,7 @@ wwwwwww"#,
                 scale: 1.,
                 color: wall_color,
                 kind: ObjectKind::WallOrFloor,
+                visible: true,
             }
         };
 
@@ -303,6 +313,7 @@ wwwwwww"#,
                 scale: 1.,
                 color: wall_color,
                 kind: ObjectKind::WallOrFloor,
+                visible: true,
             }
         };
 
@@ -332,6 +343,7 @@ wwwwwww"#,
                                             scale: 1.,
                                             color: wall_color,
                                             kind: ObjectKind::WallOrFloor,
+                                            visible: true,
                                         });
                                     } else {
                                         objects.push(make_wall(
@@ -373,6 +385,7 @@ wwwwwww"#,
                             scale: 1.,
                             color: object_color,
                             kind: ObjectKind::Exhibit,
+                            visible: true,
                         });
                         exhibit_idx = objects.len() - 1;
                         objects.push(make_floor(x, y));
@@ -389,22 +402,28 @@ wwwwwww"#,
             scale: 0.3,
             color: Colorf(vec3(1., 1., 1.)),
             kind: ObjectKind::Light,
+            visible: false,
         });
         let light_object_idx = objects.len() - 1;
 
         let (x_empty, y_empty) = level.floor_plan.first_empty();
-        let initial_camera_pos = level.grid2world(x_empty, y_empty) + vec3(0.2, 0.4, 0.2);
+
+        let player = Player {
+            pos: level.grid2world(x_empty, y_empty) + vec3(0.2, 0.4, 0.2),
+        };
+
+        let initial_camera_pos = player.pos;
 
         log::info!(
             "initial player position in world is {}, in grid is {}",
-            initial_camera_pos,
-            level.world2grid(initial_camera_pos)
+            player.pos,
+            level.world2grid(player.pos)
         );
 
         let camera_dir = Vec3::ZERO;
 
         let light = Spotlight {
-            pos: initial_camera_pos,
+            pos: player.pos,
             dir: camera_dir,
         };
 
@@ -413,6 +432,7 @@ wwwwwww"#,
         Self {
             renderer,
             objects,
+            player,
             camera: Camera {
                 pos: initial_camera_pos,
                 dir: camera_dir,
@@ -426,9 +446,11 @@ wwwwwww"#,
             light_object_idx,
             time_since_start: Duration::from_secs(0),
             angle_time: Duration::from_secs(0),
-            movement_settings: MovementSettings {
+            settings: Settings {
                 rotate_objects: false,
                 move_light_with_camera: true,
+                topdown_camera: false,
+                draw_debug_lines: false,
             },
             level,
         }
@@ -442,12 +464,12 @@ wwwwwww"#,
         let (dx, dy) = (dx as f32, dy as f32);
         let scale = -1e-3;
         self.camera.mouse_x = (self.camera.mouse_x + dx * scale).rem_euclid(2. * f32::consts::PI);
-        self.camera.mouse_y =
-            (self.camera.mouse_y + dy * scale).clamp(-f32::consts::PI / 2.1, f32::consts::PI / 3.);
+        self.camera.mouse_y += dy * scale;
     }
 
     fn move_(&mut self, dir: Direction) {
         let speed = 0.1;
+
         let forward = self.camera.dir.with_y(0.).normalize();
         let right = forward.cross(self.camera.up);
 
@@ -479,7 +501,7 @@ wwwwwww"#,
          - find the distance from desired pos to each AABB
          - if any distance < epsilon then reject motion
         */
-        let eps = 1.7;
+        let eps = 0.1;
 
         log::info!(
             "current: {}. desired: {}. current grid loc: {}. desired grid loc: {}",
@@ -554,11 +576,10 @@ wwwwwww"#,
                 self.renderer.render_settings.wireframe.next();
         }
         if self.was_key_pressed(KeyCode::Digit3) {
-            self.movement_settings.move_light_with_camera =
-                !self.movement_settings.move_light_with_camera;
+            self.settings.move_light_with_camera = !self.settings.move_light_with_camera;
         }
         if self.was_key_pressed(KeyCode::Digit4) {
-            self.movement_settings.rotate_objects = !self.movement_settings.rotate_objects;
+            self.settings.rotate_objects = !self.settings.rotate_objects;
         }
         if self.was_key_pressed(KeyCode::Digit5) {
             let (new_x, new_mode) = match self.renderer.render_settings.split_screen_mode {
@@ -572,13 +593,22 @@ wwwwwww"#,
             };
             self.renderer.render_settings.split_screen_mode = new_mode;
         }
+        if self.was_key_pressed(KeyCode::Digit6) {
+            self.settings.draw_debug_lines = !self.settings.draw_debug_lines;
+        }
+        if self.was_key_pressed(KeyCode::Digit7) {
+            self.settings.topdown_camera = !self.settings.topdown_camera;
+
+            self.objects[self.light_object_idx].visible =
+                self.settings.topdown_camera || !self.settings.move_light_with_camera;
+        }
 
         self.first_pressed_this_frame.clear();
         answer
     }
 
     fn animate_objects(&mut self, since_last_frame: Duration) {
-        if self.movement_settings.rotate_objects {
+        if self.settings.rotate_objects {
             self.angle_time += since_last_frame;
         }
 
@@ -594,22 +624,41 @@ wwwwwww"#,
             }
         }
 
-        if self.movement_settings.move_light_with_camera {
+        if self.settings.move_light_with_camera {
             let t = self.time_since_start.as_secs_f32();
 
             // self.light.pos =
             //     self.camera.pos + vec3(0.1 * f32::sin(t), -0.6 + 0.1 * f32::cos(0.7 * t), -0.1);
-            self.light.pos = self.camera.pos;
-            self.light.pos.y = -4.5;
-            self.light.dir = self.camera.dir;
+
+            if self.settings.topdown_camera {
+                self.light.dir = Mat3::from_rotation_y(self.camera.mouse_x) * vec3(0., 0., -1.);
+                self.light.pos = self.camera.pos.with_y(-3.6);
+            } else {
+                self.light.dir = self.camera.dir;
+                self.light.pos = self.camera.pos.with_y(self.camera.pos.y - 0.6);
+            }
+
             self.objects[self.light_object_idx].pos = self.light.pos;
         }
     }
 
     fn update_camera(&mut self) {
+        let (y1, y2) = if self.settings.topdown_camera {
+            (-f32::consts::PI / 2.1, -f32::consts::PI / 2.6)
+        } else {
+            (-f32::consts::PI / 2.1, f32::consts::PI / 3.)
+        };
+        self.camera.mouse_y = self.camera.mouse_y.clamp(y1, y2);
+
         self.camera.dir = Mat3::from_rotation_y(self.camera.mouse_x)
             * Mat3::from_rotation_x(self.camera.mouse_y)
             * vec3(0., 0., -1.);
+
+        if self.settings.topdown_camera {
+            self.camera.pos.y = 7.;
+        } else {
+            self.camera.pos.y = -3.;
+        }
     }
 
     pub fn update(
@@ -627,7 +676,7 @@ wwwwwww"#,
     }
 
     pub fn draw(&mut self, frame: &mut [u8]) -> RenderingResult {
-        if self.renderer.render_settings.draw_debug_lines {
+        if self.settings.draw_debug_lines {
             let f = |v: Vec2| Vec3::new(v.x, -7., v.y);
             for neighbor in self
                 .level

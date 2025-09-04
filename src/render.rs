@@ -24,7 +24,6 @@ pub enum WireframeMode {
 pub struct RenderSettings {
     pub wireframe: WireframeMode,
     pub split_screen_mode: SplitScreenMode,
-    pub draw_debug_lines: bool,
 }
 
 pub struct Renderer {
@@ -50,7 +49,6 @@ impl Renderer {
             render_settings: RenderSettings {
                 split_screen_mode: SplitScreenMode::Split,
                 wireframe: WireframeMode::TrianglesOnly,
-                draw_debug_lines: false,
             },
             debug_lines: Vec::new(),
         }
@@ -237,6 +235,9 @@ impl Renderer {
             m_view: m_light_view,
         };
         for (object_idx, object) in objects.iter().enumerate() {
+            if object.kind == ObjectKind::Light || !object.visible {
+                continue;
+            }
             let light_pov_rendering_result = Self::render_object(
                 object_idx,
                 object,
@@ -269,6 +270,9 @@ impl Renderer {
         );
 
         for (object_idx, object) in objects.iter().enumerate() {
+            if !object.visible {
+                continue;
+            }
             let render_result = match object.kind {
                 ObjectKind::Light => Self::render_object(
                     object_idx,
