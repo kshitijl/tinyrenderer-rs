@@ -570,16 +570,22 @@ impl<'buf> Shader for FinalRenderShader<'buf> {
             t * t * (3. - 2. * t)
         }
         let spotlight_factor = light_to_pixel_normalized.dot(light_dir);
-        // let spotlight_factor = 1.;
-        let spotlight_factor = smoothstep(0.93, 0.94, spotlight_factor);
-        // let spotlight_factor = smoothstep(0.8, 1., spotlight_factor);
+        let spotlight_factor_red = smoothstep(0.93, 0.94, spotlight_factor);
+        let spotlight_factor_green = smoothstep(0.93, 0.94, spotlight_factor);
+        let spotlight_factor_blue = smoothstep(0.92, 0.94, spotlight_factor);
         // let distance_factor = (40. / light_to_pixel_distance.powf(2.)).clamp(0., 1.);
-        let distance_factor = 1.;
+        let distance_factor = 1. - smoothstep(10., 15., light_to_pixel_distance);
+
+        let color_spotlight_factor = vec3(
+            spotlight_factor_red,
+            spotlight_factor_green,
+            spotlight_factor_blue,
+        );
 
         let this_pixel_normal = alpha * na + beta * nb + gamma * nc;
         let dir_intensity = this_pixel_normal.dot(-light_dir).clamp(0., 1.);
         // let dir_intensity = (dir_intensity * 6.).round() / 6.;
-        let dir_intensity = dir_intensity * spotlight_factor * distance_factor;
+        let dir_intensity = dir_intensity * color_spotlight_factor * distance_factor;
         let dir_intensity = dir_intensity * (1. - ambient_intensity);
 
         let total_intensity = ambient_intensity + dir_intensity;
