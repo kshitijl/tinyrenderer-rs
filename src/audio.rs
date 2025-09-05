@@ -17,6 +17,8 @@ pub struct AudioSystem {
 pub enum Track {
     Xpansive,
     Bear,
+    YouLost,
+    Bassline,
 }
 
 struct AudioState {
@@ -52,7 +54,7 @@ impl AudioSystem {
         let audio_state = Arc::new(Mutex::new(AudioState {
             sample_clock: 0.,
             volume: 1.,
-            track: Track::Xpansive,
+            track: Track::Bassline,
         }));
         let audio_state_clone = audio_state.clone();
 
@@ -78,6 +80,18 @@ impl AudioSystem {
 
                 let expr = match state.track {
                     Track::Xpansive => (t >> 7 | t | t >> 6) * 10 + 4 * (t & t >> 13 | t >> 6),
+                    Track::YouLost => {
+                        let q = t >> 9 | t >> 13;
+                        if q != 0 { t % (t / q) } else { 0 }
+                    }
+                    Track::Bassline => {
+                        (!t >> 2)
+                            * (if (127 & t * (7 & t >> 10)) < (245 & t * (2 + (5 & t >> 14))) {
+                                1
+                            } else {
+                                0
+                            })
+                    }
                     Track::Bear => {
                         let c = if t % 16 != 0 { 2 } else { 6 };
                         t + (t & t ^ t >> 6) - t * ((t >> 9) & (c) & t >> 9)
