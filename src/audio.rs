@@ -19,6 +19,20 @@ pub enum Track {
     Bassline,
 }
 
+// TODO support sound effects that play for a brief period and then finish.
+// For that we need to keep state of current sound effect(s). The state: which
+// track, and when it started playing (in sample_clock time. That means we
+// need to change the sample clock mod behavior otherwise we'll glitch. Oh well
+// whatever.) Or we can track where we are in the track right now. I ... think
+// this still glitches when the sample clock modulo happens. Okay. Then we need
+// to know the volume for each track. (Background music is just another track).
+// We also need global volume. Then we do a weighted sum of the output from each
+// track and scale the whole thing by global volume. Also we need to know the
+// length of the track (or infinity). Once the track reaches its end, we remove
+// it from currently playing. Decsision: do we allow multiple instances of the
+// same track to be played? If not, then we can just have one slot in the vector
+// for each track we support and simply track whether it's playing or not.
+// Simple, dumb and no allocation in the hot path.
 struct AudioState {
     sample_clock: f32,
     volume: f32,
