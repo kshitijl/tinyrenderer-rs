@@ -6,6 +6,9 @@ use std::f32;
 use std::ops::Add;
 
 mod line;
+mod shaderutils;
+
+use self::shaderutils::*;
 
 #[derive(Copy, Clone)]
 pub struct Colorf(pub Vec3);
@@ -562,25 +565,16 @@ impl<'buf> Shader for FinalRenderShader<'buf> {
         let light_dir = Vec4::from((self.spotlight.dir, 0.)).normalize();
         assert_normalized(light_dir);
 
-        // TODO implement glsl smoothstep to do this with a sharp beautiful cutoff
-        // TODO put some color diffraction effect at the edges so it looks cool
-
-        fn smoothstep(edge0: f32, edge1: f32, t: f32) -> f32 {
-            let t = ((t - edge0) / (edge1 - edge0)).clamp(0., 1.);
-            t * t * (3. - 2. * t)
-        }
         let spotlight_factor = light_to_pixel_normalized.dot(light_dir);
-        let spotlight_factor_red = smoothstep(0.93, 0.94, spotlight_factor);
-        let spotlight_factor_green = smoothstep(0.93, 0.94, spotlight_factor);
-        let spotlight_factor_blue = smoothstep(0.92, 0.94, spotlight_factor);
-        // let distance_factor = (40. / light_to_pixel_distance.powf(2.)).clamp(0., 1.);
-        let distance_factor = 1. - smoothstep(10., 15., light_to_pixel_distance);
-
-        let color_spotlight_factor = vec3(
-            spotlight_factor_red,
-            spotlight_factor_green,
-            spotlight_factor_blue,
+        let spotlight_factor_hue = (1. - smoothstep(0.934, 0.936, spotlight_factor)) * 2. / 3.;
+        let spotlight_factor_lightness = smoothstep(0.93, 0.94, spotlight_factor);
+        let spotlight_saturation = 1.;
+        let color_spotlight_factor = hsl2rgb(
+            spotlight_factor_hue,
+            spotlight_saturation,
+            spotlight_factor_lightness,
         );
+        let distance_factor = 1. - smoothstep(10., 15., light_to_pixel_distance);
 
         let this_pixel_normal = alpha * na + beta * nb + gamma * nc;
         let dir_intensity = this_pixel_normal.dot(-light_dir).clamp(0., 1.);
