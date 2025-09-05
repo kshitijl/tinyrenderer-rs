@@ -1,3 +1,4 @@
+mod audio;
 mod game;
 mod image;
 mod mesh;
@@ -197,7 +198,8 @@ fn main() -> std::io::Result<()> {
     env_logger::init();
 
     let args = Args::parse();
-    let world = game::World::new(&args);
+    let audio_system = audio::AudioSystem::new();
+    let world = game::World::new(&args, audio_system);
 
     let event_loop = EventLoop::new().unwrap();
 

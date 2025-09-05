@@ -1,7 +1,8 @@
-use crate::Args;
+use crate::audio::AudioSystem;
 use crate::image::{BLACK, BLUE, GOLD, GREY};
 use crate::mesh::Mesh;
 use crate::render::*;
+use crate::{Args, audio};
 
 use glam::{Mat3, USizeVec2, Vec2, Vec3, usizevec2, vec2, vec3};
 use smallvec::SmallVec;
@@ -223,6 +224,7 @@ struct Player {
 
 pub struct World {
     renderer: Renderer,
+    audio: AudioSystem,
     settings: Settings,
 
     camera: Camera,
@@ -242,7 +244,7 @@ pub struct World {
 }
 
 impl World {
-    pub fn new(args: &Args) -> Self {
+    pub fn new(args: &Args, audio: AudioSystem) -> Self {
         let mut objects = Vec::new();
 
         let g = FloorPlan::from_string(
@@ -439,6 +441,7 @@ wwwwwwwwwwwww"#,
 
         Self {
             renderer,
+            audio,
             objects,
             player,
             camera: Camera {
@@ -589,8 +592,11 @@ wwwwwwwwwwwww"#,
             self.objects[self.light_object_idx].visible =
                 self.settings.topdown_camera || !self.settings.move_light_with_player;
 
-            if !self.settings.topdown_camera {
+            if self.settings.topdown_camera {
+                self.audio.set_volume(0.5);
+            } else {
                 self.camera.mouse_y = 0.;
+                self.audio.set_volume(1.);
             }
 
             let a = self.player.pos;
@@ -609,6 +615,12 @@ wwwwwwwwwwwww"#,
         }
         if self.was_key_pressed(KeyCode::Digit4) {
             self.settings.rotate_objects = !self.settings.rotate_objects;
+
+            if self.settings.rotate_objects {
+                self.audio.set_track(audio::Track::Bear);
+            } else {
+                self.audio.set_track(audio::Track::Xpansive)
+            }
         }
         if self.was_key_pressed(KeyCode::Digit5) {
             let (new_x, new_mode) = match self.renderer.render_settings.split_screen_mode {
