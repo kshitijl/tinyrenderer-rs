@@ -2,7 +2,6 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{FromSample, Sample};
 use std::sync::{Arc, Mutex, mpsc};
 
-#[derive(Clone)]
 pub enum AudioCommand {
     SetVolume(f32),
     SetTrack(Track),
@@ -13,7 +12,6 @@ pub struct AudioSystem {
     channel: mpsc::Sender<AudioCommand>,
 }
 
-#[derive(Clone)]
 pub enum Track {
     Xpansive,
     Bear,
@@ -56,11 +54,10 @@ impl AudioSystem {
             volume: 1.,
             track: Track::Bassline,
         }));
-        let audio_state_clone = audio_state.clone();
 
         let mut next_value = move || {
             while let Ok(cmd) = receiver.try_recv() {
-                if let Ok(mut state) = audio_state_clone.try_lock() {
+                if let Ok(mut state) = audio_state.try_lock() {
                     match cmd {
                         AudioCommand::SetVolume(v) => state.volume = v.clamp(0., 1.),
                         AudioCommand::SetTrack(t) => state.track = t,
@@ -68,7 +65,7 @@ impl AudioSystem {
                 }
             }
 
-            if let Ok(mut state) = audio_state_clone.try_lock() {
+            if let Ok(mut state) = audio_state.try_lock() {
                 state.sample_clock = (state.sample_clock + 1.0) % (10. * 60. * sample_rate);
                 let t = 8000. * state.sample_clock / sample_rate;
                 let t = t as u32;
