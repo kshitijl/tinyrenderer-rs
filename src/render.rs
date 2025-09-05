@@ -568,7 +568,7 @@ impl<'buf> Shader for FinalRenderShader<'buf> {
         let spotlight_factor = light_to_pixel_normalized.dot(light_dir);
         let spotlight_factor_hue = (1. - smoothstep(0.934, 0.936, spotlight_factor)) * 2. / 3.;
         let spotlight_factor_lightness = smoothstep(0.93, 0.94, spotlight_factor);
-        let spotlight_saturation = 1.;
+        let spotlight_saturation = 0.3;
         let color_spotlight_factor = hsl2rgb(
             spotlight_factor_hue,
             spotlight_saturation,
