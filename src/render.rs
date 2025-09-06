@@ -516,11 +516,39 @@ impl Add for RenderingResult {
 
 struct BaryCoords(Vec3);
 
+// So we can avoid passing around stencil values when not needed.
+trait FragOutput {
+    fn color(&self) -> Color;
+    fn stencil(&self) -> f32;
+}
+
+struct JustColor(Color);
+
+impl FragOutput for JustColor {
+    fn color(&self) -> Color {
+        self.0
+    }
+
+    fn stencil(&self) -> f32 {
+        0.
+    }
+}
+
+impl FragOutput for () {
+    fn color(&self) -> Color {
+        coloru8(255, 255, 255)
+    }
+    fn stencil(&self) -> f32 {
+        0.
+    }
+}
+
 trait Shader {
     type Varying: Copy;
+    type F: FragOutput;
 
     fn vertex(&self, object_idx: usize, coord: Vec4, normal: Vec4) -> Self::Varying;
-    fn fragment(&self, object_idx: usize, varyings: &[Self::Varying; 3], b: BaryCoords) -> Color;
+    fn fragment(&self, object_idx: usize, varyings: &[Self::Varying; 3], b: BaryCoords) -> Self::F;
 }
 
 struct NoopShaderColorsWhite {
@@ -529,14 +557,13 @@ struct NoopShaderColorsWhite {
 
 impl Shader for NoopShaderColorsWhite {
     type Varying = ();
+    type F = ();
 
     #[inline]
     fn vertex(&self, _: usize, _coord: Vec4, _normal: Vec4) {}
 
     #[inline]
-    fn fragment(&self, _: usize, _varyings: &[(); 3], _b: BaryCoords) -> Color {
-        coloru8(255, 255, 255)
-    }
+    fn fragment(&self, _: usize, _varyings: &[(); 3], _b: BaryCoords) {}
 }
 
 impl NoopShaderColorsWhite {
@@ -562,6 +589,7 @@ struct FinalRenderVarying {
 
 impl<'buf> Shader for FinalRenderShader<'buf> {
     type Varying = FinalRenderVarying;
+    type F = JustColor;
 
     fn vertex(&self, _object_idx: usize, world_coord: Vec4, normal: Vec4) -> FinalRenderVarying {
         FinalRenderVarying {
@@ -575,7 +603,7 @@ impl<'buf> Shader for FinalRenderShader<'buf> {
         object_idx: usize,
         varyings: &[FinalRenderVarying; 3],
         b: BaryCoords,
-    ) -> Color {
+    ) -> JustColor {
         let constant_dir_light = vec4(0.1, -0.2, 0.3, 0.).normalize();
         let ambient_factor = 0.1;
         let dir_factor = 0.2;
@@ -659,7 +687,7 @@ impl<'buf> Shader for FinalRenderShader<'buf> {
         }
 
         let color = object_color * total_intensity;
-        colorvf(color * 255.)
+        JustColor(colorvf(color * 255.))
     }
 }
 
@@ -754,12 +782,12 @@ where
                     answer.num_depth_buffer_sets += 1;
 
                     if let Some(image) = &mut buffers.color {
-                        let color = shader.fragment(
+                        let frag_output = shader.fragment(
                             object_idx,
                             varyings,
                             BaryCoords(vec3(alpha, beta, gamma)),
                         );
-                        image.set(x, y, color);
+                        image.set(x, y, frag_output.color());
                         answer.num_pixels_drawn += 1
                     }
                 }
