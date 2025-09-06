@@ -6,7 +6,7 @@ use crate::render::*;
 use glam::{Mat3, Vec2, Vec3, vec2, vec3};
 use mazegen::{FloorPlan, GridElem, GridIdx};
 use rand;
-use rand::seq::{IndexedRandom, SliceRandom};
+use rand::seq::IndexedRandom;
 use std::collections::HashSet;
 use std::f32;
 use std::time::Duration;
@@ -154,6 +154,10 @@ impl World {
     pub fn new(args: &Args, audio: AudioSystem) -> Self {
         let mut objects = Vec::new();
 
+        // begin in top camera
+        // need to go up to object to examine with e
+        // that switches to fps camera
+
         // let g = FloorPlan::from_string(
         //     r#"
         // wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww
@@ -224,11 +228,11 @@ impl World {
         // "#,
         //         );
         //
-        let g = FloorPlan::generate(70, 20, 12, 5, 3);
+        let g = FloorPlan::generate(70, 20, 12, 5, 3, 8);
 
         g.print();
 
-        let mut theme_colors = vec![
+        let theme_colors = vec![
             chex(0xea369e),
             chex(0xea3e7a),
             chex(0xfdf952),
@@ -239,7 +243,7 @@ impl World {
             chex(0x60cee6),
             chex(0x58bff9),
             chex(0x5fc697),
-            Colorf(vec3(0.1, 0.1, 0.1)),
+            Colorf(vec3(0.3, 0.3, 0.3)),
         ];
         fn chex(hex: u32) -> Colorf {
             let r = ((hex >> 16) & 0xff) as f32 / 255.;

@@ -1,7 +1,7 @@
 use ena::unify::{InPlaceUnificationTable, UnifyKey};
 use rand::{self, Rng, seq::SliceRandom};
 use smallvec::SmallVec;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 #[derive(Copy, Debug, Clone, PartialEq)]
 pub enum GridElem {
@@ -51,6 +51,13 @@ impl FloorPlan {
         answer
     }
 
+    pub fn neighbors_of_kind(&self, g: GridIdx, k: GridElem) -> SmallVec<[GridIdx; 4]> {
+        self.valid_neighbors(g)
+            .into_iter()
+            .filter(|neighbor| self.at(*neighbor) == k)
+            .collect()
+    }
+
     pub fn at(&self, g: GridIdx) -> GridElem {
         self.grid[g.0 as usize]
     }
@@ -72,15 +79,15 @@ impl FloorPlan {
         }
     }
 
-    fn all_cells(&self) -> Vec<GridIdx> {
-        let mut answer = Vec::new();
-        for y in 0..self.height {
-            for x in 0..self.width {
-                answer.push(self.from_xy(x, y));
-            }
-        }
-        answer
+    pub fn all_cells(&self) -> impl Iterator<Item = GridIdx> {
+        (0..self.height).flat_map(move |y| (0..self.width).map(move |x| self.from_xy(x, y)))
     }
+
+    pub fn cells_of_kind(&self, k: GridElem) -> impl Iterator<Item = GridIdx> {
+        self.all_cells().filter(move |n| self.at(*n) == k)
+    }
+
+    #[allow(dead_code)]
     pub fn from_string(s: &str) -> Self {
         let mut answer = Vec::new();
         let s = s.trim();
@@ -121,11 +128,30 @@ impl FloorPlan {
         self.is_valid(x1 - 1, y1 - 1) && self.is_valid(x2 + 1, y2 + 1)
     }
 
-    fn stamp_room(&mut self, x1: i32, y1: i32, x2: i32, y2: i32) {
-        for x in x1..=x2 {
-            for y in y1..=y2 {
-                self.set(self.from_xy(x as u32, y as u32), GridElem::Empty);
+    fn cells_in_rect(
+        &self,
+        x1: i32,
+        y1: i32,
+        x2: i32,
+        y2: i32,
+    ) -> impl Iterator<Item = GridIdx> + use<'_> {
+        (x1..=x2).flat_map(move |x| (y1..=y2).map(move |y| self.from_xy(x as u32, y as u32)))
+    }
+
+    fn contains_exhibit(&self, x1: i32, y1: i32, x2: i32, y2: i32) -> bool {
+        for g in self.cells_in_rect(x1, y1, x2, y2) {
+            if self.at(g) == GridElem::Exhibit {
+                return true;
             }
+        }
+
+        false
+    }
+
+    fn stamp_room(&mut self, x1: i32, y1: i32, x2: i32, y2: i32) {
+        let to_set: Vec<GridIdx> = self.cells_in_rect(x1, y1, x2, y2).collect();
+        for g in to_set {
+            self.set(g, GridElem::Empty);
         }
     }
 
@@ -135,6 +161,7 @@ impl FloorPlan {
         num_rooms: u32,
         room_size: i32,
         room_size_variance: i32,
+        num_additional_exhibits: i32,
     ) -> Self {
         assert!(room_size > 0);
         assert!(room_size_variance > 0);
@@ -213,17 +240,22 @@ impl FloorPlan {
                 + Rng::random_range(&mut rng, 0..room_size_variance * 2);
 
             if f.room_would_fit(x, y, x + size_x, y + size_y) {
+                if f.contains_exhibit(x, y, x + size_x, y + size_y) {
+                    continue;
+                }
+                let exhibit_location = f.from_xy((x + size_x / 2) as u32, (y + size_y / 2) as u32);
                 f.stamp_room(x, y, x + size_x, y + size_y);
                 room_count += 1;
-                f.set(
-                    f.from_xy((x + size_x / 2) as u32, (y + size_y / 2) as u32),
-                    GridElem::Exhibit,
-                );
+                f.set(exhibit_location, GridElem::Exhibit);
             }
         }
 
         println!("After placing rooms and exhibits:");
         f.print();
+        assert_eq!(
+            f.cells_of_kind(GridElem::Exhibit).count(),
+            num_rooms as usize
+        );
         println!("\n");
 
         loop {
@@ -254,6 +286,56 @@ impl FloorPlan {
         println!("After removing dead ends:");
         f.print();
         println!("\n");
+
+        for _ in 0..num_additional_exhibits {
+            // bfs from each exhibit
+            // for each point take min distance
+            // => "distance from central loc"
+            // put an exhibit there
+            let mut min_dist_to_exhibit: HashMap<GridIdx, u32> = HashMap::new();
+
+            for exhibit in f.cells_of_kind(GridElem::Exhibit) {
+                let mut q: VecDeque<(GridIdx, u32)> = VecDeque::new();
+                let mut seens: HashSet<GridIdx> = HashSet::new();
+
+                q.push_back((exhibit, 0));
+
+                while !q.is_empty() {
+                    let (current, dist) = q.pop_front().unwrap();
+
+                    if seens.contains(&current) {
+                        continue;
+                    }
+                    seens.insert(current);
+
+                    min_dist_to_exhibit
+                        .entry(current)
+                        .and_modify(|e| *e = u32::min(*e, dist))
+                        .or_insert(dist);
+
+                    for neighbor in f.neighbors_of_kind(current, GridElem::Empty) {
+                        q.push_back((neighbor, dist + 1));
+                    }
+                }
+            }
+
+            let farthest = min_dist_to_exhibit
+                .iter()
+                .max_by_key(|(_, dist)| **dist)
+                .unwrap()
+                .0;
+            f.set(*farthest, GridElem::Exhibit);
+        }
+
+        assert_eq!(
+            f.cells_of_kind(GridElem::Exhibit).count(),
+            num_rooms as usize + num_additional_exhibits as usize
+        );
+
+        println!("After placing additional exhibits:");
+        f.print();
+        println!("\n");
+
         f
     }
 
@@ -280,12 +362,6 @@ impl FloorPlan {
 
         panic!("no empty");
     }
-}
-
-#[derive(Debug, Copy, Clone, Eq, Hash, PartialEq)]
-struct Wall {
-    a: GridIdx,
-    b: GridIdx,
 }
 
 #[derive(Copy, Debug, PartialEq, Clone, Eq, Hash)]
@@ -349,9 +425,13 @@ mod tests {
 
     #[test]
     fn it_generates() {
-        FloorPlan::generate(16, 16, 3, 3, 1);
-        FloorPlan::generate(40, 40, 15, 5, 3);
+        for _ in 0..10 {
+            let num_rooms = 3;
+            let num_additional_exhibits = 3;
+            FloorPlan::generate(16, 16, num_rooms, 3, 1, num_additional_exhibits);
 
-        assert_eq!(1, 0);
+            FloorPlan::generate(70, 20, 12, 5, 3, 8);
+            FloorPlan::generate(40, 40, 15, 5, 3, 3);
+        }
     }
 }
