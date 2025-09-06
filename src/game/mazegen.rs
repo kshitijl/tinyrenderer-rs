@@ -37,11 +37,11 @@ impl FloorPlan {
         GridIdx(y * self.width() + x)
     }
 
-    pub fn valid_neighbors(&self, g: GridIdx) -> SmallVec<[GridIdx; 4]> {
+    pub fn valid_neighbors_no_diagonals(&self, g: GridIdx) -> SmallVec<[GridIdx; 4]> {
         let mut answer = SmallVec::new();
         let (x, y) = self.to_xy(g);
 
-        for (dx, dy) in [(1, 0), (-1i32, 0), (0, 1), (0, -1i32)] {
+        for (dx, dy) in [(0, 1), (0, -1), (1, 0), (-1, 0)] {
             let (neighbor_x, neighbor_y) = (x as i32 + dx, y as i32 + dy);
             if self.is_valid(neighbor_x, neighbor_y) {
                 answer.push(self.from_xy(neighbor_x as u32, neighbor_y as u32));
@@ -51,8 +51,27 @@ impl FloorPlan {
         answer
     }
 
+    pub fn valid_neighbors_at_dist(&self, g: GridIdx, dist: i32) -> SmallVec<[GridIdx; 4]> {
+        let mut answer = SmallVec::new();
+        let (x, y) = self.to_xy(g);
+
+        for dx in -dist..=dist {
+            for dy in -dist..=dist {
+                if dx == 0 && dy == 0 {
+                    continue;
+                }
+                let (neighbor_x, neighbor_y) = (x as i32 + dx, y as i32 + dy);
+                if self.is_valid(neighbor_x, neighbor_y) {
+                    answer.push(self.from_xy(neighbor_x as u32, neighbor_y as u32));
+                }
+            }
+        }
+
+        answer
+    }
+
     pub fn neighbors_of_kind(&self, g: GridIdx, k: GridElem) -> SmallVec<[GridIdx; 4]> {
-        self.valid_neighbors(g)
+        self.valid_neighbors_no_diagonals(g)
             .into_iter()
             .filter(|neighbor| self.at(*neighbor) == k)
             .collect()
@@ -188,7 +207,7 @@ impl FloorPlan {
                 let mut the_set = None;
                 let mut num_empty_neighbors = 0;
                 for neighbor in f
-                    .valid_neighbors(*cell)
+                    .valid_neighbors_no_diagonals(*cell)
                     .iter()
                     .filter(|n| f.at(**n) == GridElem::Empty)
                 {
@@ -215,7 +234,7 @@ impl FloorPlan {
                     f.set(*cell, GridElem::Empty);
                     u.insert(*cell);
                     for neighbor in f
-                        .valid_neighbors(*cell)
+                        .valid_neighbors_no_diagonals(*cell)
                         .iter()
                         .filter(|n| f.at(**n) == GridElem::Empty)
                     {
@@ -264,7 +283,7 @@ impl FloorPlan {
             for g in f.all_cells() {
                 if f.at(g) == GridElem::Empty {
                     let num_wall_neighbors = f
-                        .valid_neighbors(g)
+                        .valid_neighbors_no_diagonals(g)
                         .iter()
                         .filter(|n| f.at(**n) == GridElem::Wall)
                         .count();

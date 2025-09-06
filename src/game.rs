@@ -7,7 +7,7 @@ use glam::{Mat3, Vec2, Vec3, vec2, vec3};
 use mazegen::{FloorPlan, GridElem, GridIdx};
 use rand;
 use rand::seq::IndexedRandom;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::f32;
 use std::time::Duration;
 use winit::keyboard::KeyCode;
@@ -62,10 +62,10 @@ enum Direction {
     Left,
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 pub enum ObjectKind {
     Light,
-    Exhibit,
+    Exhibit { hiddenness: f32 },
     WallOrFloor,
 }
 
@@ -133,6 +133,9 @@ enum ViewMode {
     Fps { last_topdown_y: f32 },
 }
 
+#[derive(Debug)]
+struct ObjectIdx(usize);
+
 pub struct World {
     renderer: Renderer,
     audio: AudioSystem,
@@ -147,12 +150,12 @@ pub struct World {
     player: Player,
     objects: Vec<Object>,
     level: Level,
+    g2o: HashMap<GridIdx, ObjectIdx>,
 
     pub keys: HashSet<KeyCode>,
     pub first_pressed_this_frame: HashSet<KeyCode>,
 
     time_since_start: Duration,
-    angle_time: Duration,
 }
 
 impl World {
@@ -251,6 +254,8 @@ impl World {
 
         let mut exhibit_models = args.exhibit_models.iter().cycle();
 
+        let mut g2o = HashMap::new();
+
         for x in 0..level.floor_plan.width() {
             for y in 0..level.floor_plan.height() {
                 let mesh: Mesh;
@@ -262,7 +267,7 @@ impl World {
                 }
                 match level.floor_plan.at(g) {
                     GridElem::Wall => {
-                        for neighbor in level.floor_plan.valid_neighbors(g) {
+                        for neighbor in level.floor_plan.valid_neighbors_no_diagonals(g) {
                             if level.floor_plan.at(neighbor) == GridElem::Empty {
                                 for y_offset in [-2., 0., 2.] {
                                     if let Some(debug_wall) = &args.wall_model_debug {
@@ -320,10 +325,12 @@ impl World {
                             angle_y: 0.,
                             scale: 1.,
                             color,
-                            kind: ObjectKind::Exhibit,
+                            kind: ObjectKind::Exhibit { hiddenness: 1.0 },
                             visible: true,
                         });
+                        g2o.insert(level.floor_plan.from_xy(x, y), ObjectIdx(objects.len() - 1));
                         exhibit_idx = objects.len() - 1;
+
                         objects.push(make_floor(x, y));
                     }
                 }
@@ -383,12 +390,12 @@ impl World {
             light,
             light_object_idx,
             time_since_start: Duration::from_secs(0),
-            angle_time: Duration::from_secs(0),
             settings: Settings {
                 rotate_objects: false,
                 draw_debug_lines: false,
             },
             level,
+            g2o,
         }
     }
 
@@ -450,7 +457,11 @@ impl World {
         let mut current_min_distance = f32::MAX;
         let mut desired_min_distance = f32::MAX;
         let current_grid_pos = self.level.world2grid(self.player.pos);
-        for neighbor in self.level.floor_plan.valid_neighbors(current_grid_pos) {
+        for neighbor in self
+            .level
+            .floor_plan
+            .valid_neighbors_no_diagonals(current_grid_pos)
+        {
             match self.level.floor_plan.at(neighbor) {
                 GridElem::Wall | GridElem::Exhibit => {
                     let aabb = self.level.aabb(neighbor);
@@ -501,6 +512,36 @@ impl World {
             b,
             self.level.aabb(p)
         );
+    }
+
+    fn player_grid_pos(&self) -> GridIdx {
+        self.level.world2grid(self.player.pos)
+    }
+
+    fn examine_nearby_exhibits(&mut self, since_last_frame: Duration) {
+        for g in self
+            .level
+            .floor_plan
+            .valid_neighbors_at_dist(self.player_grid_pos(), 2)
+        {
+            if self.level.floor_plan.at(g) == GridElem::Exhibit {
+                let object_idx = self.g2o.get(&g).unwrap();
+                let object = &mut self.objects[object_idx.0];
+                match object.kind {
+                    ObjectKind::Exhibit { ref mut hiddenness } => {
+                        *hiddenness =
+                            (*hiddenness - since_last_frame.as_secs_f32() / 2.0).clamp(0., 1.);
+                    }
+
+                    _ => {
+                        panic!(
+                            "unexpectedly found {:?} at idx {:?}, grid idx {:?}",
+                            object.kind, object_idx, g
+                        );
+                    }
+                }
+            }
+        }
     }
 
     fn switch_view_mode(&mut self) {
@@ -555,6 +596,7 @@ impl World {
                     // do nothing, we're already correct
                 }
             }
+            self.examine_nearby_exhibits(since_last_frame);
         } else {
             if self.vm != ViewMode::Topdown {
                 self.switch_view_mode()
@@ -602,7 +644,7 @@ impl World {
         // sway it gently
         let t = self.time_since_start.as_secs_f32();
         self.light.pos = self.player.pos.with_y(-3.6)
-            + vec3(0.1 * f32::sin(t), -0.6 + 0.1 * f32::cos(0.7 * t), -0.1);
+            + vec3(0.1 * f32::sin(t), -0.3 + 0.1 * f32::cos(0.7 * t), -0.1);
         self.light.dir += vec3(
             0.05 * f32::sin(0.8 * t),
             0.04 * f32::cos(1.1 * t),
@@ -613,15 +655,12 @@ impl World {
     }
 
     fn animate_objects(&mut self, since_last_frame: Duration) {
-        if self.settings.rotate_objects {
-            self.angle_time += since_last_frame;
-        }
-
         for object in self.objects.iter_mut() {
-            let angle = self.angle_time.as_secs_f32();
             match object.kind {
-                ObjectKind::Exhibit => {
-                    object.angle_y = angle;
+                ObjectKind::Exhibit { hiddenness } => {
+                    if hiddenness <= 0. {
+                        object.angle_y += since_last_frame.as_secs_f32();
+                    }
                 }
                 ObjectKind::Light | ObjectKind::WallOrFloor => {
                     // do nothing
@@ -678,7 +717,7 @@ impl World {
             for neighbor in self
                 .level
                 .floor_plan
-                .valid_neighbors(self.level.world2grid(self.player.pos))
+                .valid_neighbors_no_diagonals(self.level.world2grid(self.player.pos))
                 .iter()
             {
                 let color = match self.level.floor_plan.at(*neighbor) {

@@ -303,7 +303,7 @@ impl Renderer {
                     &self.render_settings,
                     &light_pov,
                 ),
-                ObjectKind::Exhibit | ObjectKind::WallOrFloor => Self::render_object(
+                ObjectKind::Exhibit { .. } | ObjectKind::WallOrFloor => Self::render_object(
                     object_idx,
                     object,
                     &uniforms,
@@ -624,7 +624,15 @@ impl<'buf> Shader for FinalRenderShader<'buf> {
             + flashlight_intensity * flashlight_factor
             + dir_intensity * dir_factor;
 
-        let object_color = self.objects[object_idx].color.0;
+        let mut object_color = self.objects[object_idx].color.0;
+
+        match self.objects[object_idx].kind {
+            ObjectKind::Exhibit { hiddenness } => {
+                object_color.z = hiddenness;
+            }
+            _ => { // do nothing
+            }
+        }
 
         let color = object_color * total_intensity;
         colorvf(color * 255.)
