@@ -1,15 +1,16 @@
-use crate::audio::AudioSystem;
+use crate::Args;
+use crate::audio::{self, AudioSystem};
 use crate::image::{BLACK, BLUE, GOLD, GREY};
 use crate::mesh::Mesh;
 use crate::render::*;
-use crate::{Args, audio};
-
 use glam::{Mat3, USizeVec2, Vec2, Vec3, usizevec2, vec2, vec3};
 use smallvec::SmallVec;
 use std::collections::HashSet;
 use std::f32;
 use std::time::Duration;
 use winit::keyboard::KeyCode;
+
+mod mazegen;
 
 pub enum ResolutionChangeAction {
     DoNothing,
@@ -249,19 +250,56 @@ impl World {
 
         let g = FloorPlan::from_string(
             r#"
-wwwwwwwwwwwww
-w.....wwwwwww
-w..x..wwwwwww
-w....wwwwwwww
-w..ww......ww
-w..w....x...w
-w..w........w
-w..w....x...w
-w...........w
-w.......x...w
-w...........w
-wwwwwwwwwwwww"#,
+.....w.w.w.......w...w.w.......w
+..ww.w.w.wwwww..ww..ww.w..ww..ww
+...w.w.....w.x.......w...w...w.w
+...w.www..wwwwww..wwwwww.wwwww.w
+.w.w.........w...w....x........w
+ww.wwwww..ww.w..wwww......ww..ww
+.....w.....w.w...w...w.w.w...w.w
+..ww.w....wwww...w..wwwwwwww.w.w
+.w...w.w...w...w.....w.........w
+wwww.w.www.www.wwwww.w..wwwwww.w
+.....w...w.......w...w.......w.w
+..ww.www.www..ww.wwwww..wwww.w.w
+.w...w...w...w.......w.....w.w.w
+.wwwww..ww..wwwwww...wwwww.www.w
+.w.w...w...w..x....w.....w.w...w
+ww.wwwwwww.www..wwwwww...wwwww.w
+.w...w...w.w...w.......w.w.w...w
+.w...w..ww.www.w..wwwwww.w.wwwww
+...w..x..w...w.w.......w.w...w.w
+wwwwww...w..wwww....wwwwww..ww.w
+.....w.w...w...w.w.....w.......w
+.....w.wwwww...www..ww.w..wwww.w
+.w.w.....w...w.....w.w.....w...w
+ww.w.....wwwww.....w.wwwww.w...w
+.w.w.w.w.w.....w.w.w.......w.w.w
+.w.www.wwwww..wwwwww..wwww.w.www
+.....w...w.....w.w...w...w.w...w
+..ww.w..wwww..ww.www.www.w.www.w
+.w...w.w.....w.....w...w.....w.w
+.wwwww.www...w....ww..ww.....www
+...w.....w.w...w...w...w.w.w...w
+wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww
+            "#,
         );
+
+        //         let g = FloorPlan::from_string(
+        //             r#"
+        // wwwwwwwwwwwww
+        // w.....wwwwwww
+        // w..x..wwwwwww
+        // w....wwwwwwww
+        // w..ww......ww
+        // w..w....x...w
+        // w..w........w
+        // w..w....x...w
+        // w...........w
+        // w.......x...w
+        // w...........w
+        // wwwwwwwwwwwww"#,
+        //         );
 
         // //         let g = FloorPlan::from_string(
         // //             r#"
