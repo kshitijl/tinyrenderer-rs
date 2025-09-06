@@ -88,8 +88,19 @@ impl FloorPlan {
         }
     }
 
+    fn all_cells(&self) -> Vec<GridIdx> {
+        let mut answer = Vec::new();
+        for y in 0..self.height {
+            for x in 0..self.width {
+                answer.push(self.from_xy(x, y));
+            }
+        }
+        answer
+    }
+
     fn room_would_fit(&self, x1: i32, y1: i32, x2: i32, y2: i32) -> bool {
-        self.is_valid(x1, y1) && self.is_valid(x2, y2)
+        // The +1 and -1 here are to stop stamping out the boundary wall.
+        self.is_valid(x1 - 1, y1 - 1) && self.is_valid(x2 + 1, y2 + 1)
     }
 
     fn stamp_room(&mut self, x1: i32, y1: i32, x2: i32, y2: i32) {
@@ -189,20 +200,20 @@ fn generate_maze(
 
     let mut u = UFWithOwnKey::new();
 
-    let mut all_cells = Vec::new();
-    for x in 0..width {
-        for y in 0..height {
-            all_cells.push(f.from_xy(x, y));
+    let mut all_non_boundary_cells = Vec::new();
+    for x in 1..width - 1 {
+        for y in 1..height - 1 {
+            all_non_boundary_cells.push(f.from_xy(x, y));
         }
     }
 
     let mut rng = rand::rng();
-    all_cells.shuffle(&mut rng);
+    all_non_boundary_cells.shuffle(&mut rng);
 
-    for cell in all_cells.iter() {
+    for cell in all_non_boundary_cells.iter() {
         if f.at(*cell) == GridElem::Wall {
-            // if the number of distinct sets that empty neighbors belong to isn't exactly 1, then KD
-
+            // if the number of distinct sets that empty neighbors belong to
+            // isn't exactly 1, then knock it down
             let mut should_knock_down = false;
             let mut the_set = None;
             let mut num_empty_neighbors = 0;
@@ -267,6 +278,31 @@ fn generate_maze(
         }
     }
 
+    loop {
+        let mut dead_ends: Vec<GridIdx> = Vec::new();
+
+        for g in f.all_cells() {
+            if f.at(g) == GridElem::Empty {
+                let num_wall_neighbors = f
+                    .valid_neighbors(g)
+                    .iter()
+                    .filter(|n| f.at(**n) == GridElem::Wall)
+                    .count();
+                if num_wall_neighbors == 3 {
+                    dead_ends.push(g);
+                }
+            }
+        }
+
+        if dead_ends.is_empty() {
+            break;
+        }
+
+        for g in dead_ends {
+            f.set(g, GridElem::Wall);
+        }
+    }
+
     f.print();
     println!("\n");
 
@@ -280,7 +316,7 @@ mod tests {
     #[test]
     fn it_generates() {
         generate_maze(16, 16, 3, 3, 1);
-        generate_maze(40, 40, 15, 7, 3);
+        generate_maze(40, 40, 15, 5, 3);
 
         assert_eq!(1, 0);
     }
