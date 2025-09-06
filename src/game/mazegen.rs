@@ -332,7 +332,7 @@ impl FloorPlan {
             num_rooms as usize + num_additional_exhibits as usize
         );
 
-        println!("After placing additional exhibits:");
+        println!("After placing additional exhibits in cul de sacs:");
         f.print();
         println!("\n");
 
