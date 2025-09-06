@@ -159,56 +159,6 @@ impl World {
     pub fn new(args: &Args, audio: AudioSystem) -> Self {
         let mut objects = Vec::new();
 
-        // begin in top camera
-        // need to go up to object to examine with e
-        // that switches to fps camera
-
-        // let g = FloorPlan::from_string(
-        //     r#"
-        // wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww
-        // w..w....w..w.w.w..w...w..w...w.w....w.w..w
-        // ww..............ww.w.ww.ww.w.w..w.w...w.ww
-        // w.............ww.......w....w.w...www..w.w
-        // www..............www.w...w.w...www....w.ww
-        // w.......x.....ww.w.w.www.....ww...ww.ww..w
-        // w.w........................ww...ww.......w
-        // ww..............ww.........w.w.w....w.ww.w
-        // ww.w..........w.w.w............w.www.w.w.w
-        // w...w.....ww.w....w....................w.w
-        // w............w..w.w...x...........ww.w..ww
-        // w........w..ww.ww.w.........x....w.w.w...w
-        // w.........w...w..w...............w..w..w.w
-        // w..........w.w..w....................www.w
-        // w...x.....ww..w.www..............w..w...ww
-        // w.........w..w......w.w.w.........w..w...w
-        // w..............w.w.ww.w...........ww...www
-        // w........w.w.w.w.www....w..............w.w
-        // w.........w..ww.w....ww.....x......w.....w
-        // w...........w.w..................ww.w.ww.w
-        // w......w..w.......................w...w.ww
-        // w......w.w.w.w.....................w..w..w
-        // w..ww.ww.w..w..........x.........w..w.w.ww
-        // w.w..w..w..w..w...x.........w.w.ww.w.w...w
-        // w.w.w....w.w.w..............ww...........w
-        // w...w.w.w.....w..............w..ww.w.ww..w
-        // w..w.w....w.w.w.......ww....w.w.w.w..ww.ww
-        // w.....w.ww.w............w................w
-        // w.w....w......w..........................w
-        // ww..ww...ww.w..w...w................x....w
-        // w.w..w..w.w.w.w..........................w
-        // w...w..ww....w...................w.......w
-        // w.w..w.....................x............ww
-        // w..w.w............x..............ww.w.w..w
-        // w.w....w.....w.....................w..w..w
-        // w.w.w.ww..x...w...................w.ww.w.w
-        // ww..w.........w..................w...w...w
-        // w....w.w.........w............w...w...w.ww
-        // www.w.ww.......w.ww............w.w.w.....w
-        // w...w....w..w.w....w.................w..ww
-        // wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww
-        // "#,
-        // );
-
         // let g = FloorPlan::from_string(
         //     r#"
         // wwwwwwwwwwwww
@@ -225,14 +175,6 @@ impl World {
         // wwwwwwwwwwwww"#,
         // );
 
-        // //         let g = FloorPlan::from_string(
-        // //             r#"
-        // wwwwwwwwww
-        // w.wwwwwwww
-        // wwwwwwwwww
-        // "#,
-        //         );
-        //
         let g = FloorPlan::generate(70, 20, 12, 5, 3, 8);
 
         g.print();
