@@ -1,7 +1,7 @@
 use crate::game::{Camera, Object, ObjectKind, Spotlight};
 use crate::image::*;
 
-use glam::{Mat4, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec3};
+use glam::{Mat4, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec3, vec4};
 use std::f32;
 use std::ops::Add;
 
@@ -311,7 +311,7 @@ impl Renderer {
     }
 
     fn clear(&mut self) {
-        self.image.clear(coloru8(0x00, 0x00, 0x35));
+        self.image.clear(coloru8(0x00, 0x00, 0x00));
         self.depths.clear();
         self.light_depths.clear();
     }
@@ -539,8 +539,12 @@ impl<'buf> Shader for FinalRenderShader<'buf> {
         varyings: &[FinalRenderVarying; 3],
         b: BaryCoords,
     ) -> Color {
+        let constant_dir_light = vec4(0.1, -0.2, 0.3, 0.).normalize();
+        let ambient_factor = 0.1;
+        let dir_factor = 0.2;
+        let flashlight_factor = 0.7;
+
         let (alpha, beta, gamma) = (b.0.x, b.0.y, b.0.z);
-        let ambient_intensity = 0.2;
         let (na, nb, nc) = (varyings[0].normal, varyings[1].normal, varyings[2].normal);
         let (wa, wb, wc) = (
             varyings[0].world_coord,
@@ -577,20 +581,17 @@ impl<'buf> Shader for FinalRenderShader<'buf> {
         let distance_factor = 1. - smoothstep(10., 15., light_to_pixel_distance);
 
         let this_pixel_normal = alpha * na + beta * nb + gamma * nc;
-        let dir_intensity = this_pixel_normal.dot(-light_dir).clamp(0., 1.);
-        // let dir_intensity = (dir_intensity * 6.).round() / 6.;
-        let dir_intensity = dir_intensity * color_spotlight_factor * distance_factor;
-        let dir_intensity = dir_intensity * (1. - ambient_intensity);
+        let flashlight_intensity = this_pixel_normal.dot(-light_dir).clamp(0., 1.);
+        let flashlight_intensity = flashlight_intensity * color_spotlight_factor * distance_factor;
 
-        let total_intensity = ambient_intensity + dir_intensity;
-        let object_color = self.objects[object_idx].color.0;
-        let mut color = object_color * total_intensity;
+        let dir_intensity = this_pixel_normal.dot(-constant_dir_light).clamp(0., 1.);
 
         let this_pixel_clip_coords = self.light_vp * this_pixel_world_coords;
         let this_pixel_ndc = perspective_divided(this_pixel_clip_coords);
         let this_pixel_screen_coords = (self.light_viewport * this_pixel_ndc).xyz();
         let p = this_pixel_screen_coords.with_z(this_pixel_screen_coords.z / 2. + 0.5);
 
+        let mut flashlight_intensity = flashlight_intensity;
         if (p.x as i32) >= 0
             && (p.y as i32) >= 0
             && (p.x as usize) < width
@@ -598,13 +599,21 @@ impl<'buf> Shader for FinalRenderShader<'buf> {
         {
             let light_pov_best_z = self.light_pov_depths.get(p.x as usize, p.y as usize);
             if p.z < light_pov_best_z + 0.005 {
+                // TODO move all the spotlight computation here.
                 // do nothing; we're in light
             } else {
-                let total_intensity = ambient_intensity;
-                color = object_color * total_intensity;
+                // let total_intensity = ambient_intensity + dir_intensity * (1. - ambient_intensity);
+                flashlight_intensity = Vec3::ZERO;
             }
         }
 
+        let total_intensity = 1. * ambient_factor
+            + flashlight_intensity * flashlight_factor
+            + dir_intensity * dir_factor;
+
+        let object_color = self.objects[object_idx].color.0;
+
+        let color = object_color * total_intensity;
         colorvf(color * 255.)
     }
 }
