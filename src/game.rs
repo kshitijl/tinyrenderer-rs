@@ -3,8 +3,8 @@ use crate::audio::{self, AudioSystem};
 use crate::image::{BLACK, BLUE, GOLD, GREY};
 use crate::mesh::Mesh;
 use crate::render::*;
-use glam::{Mat3, USizeVec2, Vec2, Vec3, usizevec2, vec2, vec3};
-use smallvec::SmallVec;
+use glam::{Mat3, Vec2, Vec3, vec2, vec3};
+use mazegen::{FloorPlan, GridElem, GridIdx};
 use std::collections::HashSet;
 use std::f32;
 use std::time::Duration;
@@ -80,103 +80,6 @@ pub struct Object {
     pub visible: bool,
 }
 
-mod fp {
-    use super::*;
-
-    #[derive(Copy, Debug, Clone, PartialEq)]
-    pub enum GridElem {
-        Wall,
-        Empty,
-        Exhibit,
-    }
-    pub struct FloorPlan {
-        width: usize,
-        height: usize,
-        grid: Vec<GridElem>,
-    }
-
-    impl FloorPlan {
-        pub fn from_string(s: &str) -> Self {
-            let mut answer = Vec::new();
-            let s = s.trim();
-
-            let unique_widths: HashSet<usize> = s.lines().map(|line| line.len()).collect();
-
-            if unique_widths.len() > 1 {
-                panic!("grid not rectangular")
-            }
-            let width = *unique_widths.iter().next().unwrap();
-
-            for line in s.lines() {
-                for c in line.chars().rev() {
-                    let elem = match c {
-                        'w' => Some(GridElem::Wall),
-                        '.' => Some(GridElem::Empty),
-                        'x' => Some(GridElem::Exhibit),
-                        '\n' => None,
-                        _ => panic!("unknown grid letter {}", c),
-                    };
-                    if let Some(e) = elem {
-                        answer.push(e);
-                    }
-                }
-            }
-
-            let height = answer.len() / width;
-
-            Self {
-                width,
-                height,
-                grid: answer,
-            }
-        }
-
-        pub fn height(&self) -> usize {
-            self.height
-        }
-
-        pub fn width(&self) -> usize {
-            self.width
-        }
-
-        pub fn valid_neighbors(&self, p: USizeVec2) -> SmallVec<[USizeVec2; 4]> {
-            let mut answer = SmallVec::new();
-
-            for (dx, dy) in [(1, 0), (-1i32, 0), (0, 1), (0, -1i32)] {
-                let (neighbor_x, neighbor_y) = (p.x as i32 + dx, p.y as i32 + dy);
-                if self.is_valid(neighbor_x, neighbor_y) {
-                    answer.push(usizevec2(neighbor_x as usize, neighbor_y as usize));
-                }
-            }
-
-            answer
-        }
-
-        pub fn at(&self, p: USizeVec2) -> GridElem {
-            let y = self.height - p.y - 1;
-            self.grid[y * self.width + p.x]
-        }
-
-        fn is_valid(&self, x: i32, y: i32) -> bool {
-            x >= 0 && y >= 0 && x < self.width as i32 && y < self.height as i32
-        }
-
-        pub fn first_empty(&self) -> (usize, usize) {
-            for y in 0..self.height {
-                for x in 0..self.width {
-                    if self.at(usizevec2(x, y)) == GridElem::Empty {
-                        return (x, y);
-                    }
-                }
-            }
-
-            panic!("no empty");
-        }
-    }
-}
-
-use fp::{FloorPlan, GridElem};
-
 struct Level {
     floor_plan: FloorPlan,
     grid_size: f32,
@@ -190,7 +93,7 @@ impl Level {
         }
     }
 
-    fn grid2world(&self, x: usize, y: usize) -> Vec3 {
+    fn grid2world(&self, x: u32, y: u32) -> Vec3 {
         vec3(
             (x as f32) * self.grid_size,
             -4.,
@@ -198,22 +101,23 @@ impl Level {
         )
     }
 
-    fn world2grid(&self, v: Vec3) -> USizeVec2 {
+    fn world2grid(&self, v: Vec3) -> GridIdx {
         let x = (v.x / self.grid_size).round();
         let y = (v.z / self.grid_size).round();
 
-        usizevec2(x as usize, y as usize)
+        self.floor_plan.from_xy(x as u32, y as u32)
     }
 
-    fn aabb(&self, p: USizeVec2) -> AABBXZ {
+    fn aabb(&self, g: GridIdx) -> AABBXZ {
+        let (x, y) = self.floor_plan.to_xy(g);
         AABBXZ {
             min: vec2(
-                (p.x as f32 - 0.5) * self.grid_size,
-                (p.y as f32 - 0.5) * self.grid_size,
+                (x as f32 - 0.5) * self.grid_size,
+                (y as f32 - 0.5) * self.grid_size,
             ),
             max: vec2(
-                (p.x as f32 + 0.5) * self.grid_size,
-                (p.y as f32 + 0.5) * self.grid_size,
+                (x as f32 + 0.5) * self.grid_size,
+                (y as f32 + 0.5) * self.grid_size,
             ),
         }
     }
@@ -248,54 +152,54 @@ impl World {
     pub fn new(args: &Args, audio: AudioSystem) -> Self {
         let mut objects = Vec::new();
 
-        let g = FloorPlan::from_string(
-            r#"
-wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww
-w..w....w..w.w.w..w...w..w...w.w....w.w..w
-ww..............ww.w.ww.ww.w.w..w.w...w.ww
-w.............ww.......w....w.w...www..w.w
-www..............www.w...w.w...www....w.ww
-w.......x.....ww.w.w.www.....ww...ww.ww..w
-w.w........................ww...ww.......w
-ww..............ww.........w.w.w....w.ww.w
-ww.w..........w.w.w............w.www.w.w.w
-w...w.....ww.w....w....................w.w
-w............w..w.w...x...........ww.w..ww
-w........w..ww.ww.w.........x....w.w.w...w
-w.........w...w..w...............w..w..w.w
-w..........w.w..w....................www.w
-w...x.....ww..w.www..............w..w...ww
-w.........w..w......w.w.w.........w..w...w
-w..............w.w.ww.w...........ww...www
-w........w.w.w.w.www....w..............w.w
-w.........w..ww.w....ww.....x......w.....w
-w...........w.w..................ww.w.ww.w
-w......w..w.......................w...w.ww
-w......w.w.w.w.....................w..w..w
-w..ww.ww.w..w..........x.........w..w.w.ww
-w.w..w..w..w..w...x.........w.w.ww.w.w...w
-w.w.w....w.w.w..............ww...........w
-w...w.w.w.....w..............w..ww.w.ww..w
-w..w.w....w.w.w.......ww....w.w.w.w..ww.ww
-w.....w.ww.w............w................w
-w.w....w......w..........................w
-ww..ww...ww.w..w...w................x....w
-w.w..w..w.w.w.w..........................w
-w...w..ww....w...................w.......w
-w.w..w.....................x............ww
-w..w.w............x..............ww.w.w..w
-w.w....w.....w.....................w..w..w
-w.w.w.ww..x...w...................w.ww.w.w
-ww..w.........w..................w...w...w
-w....w.w.........w............w...w...w.ww
-www.w.ww.......w.ww............w.w.w.....w
-w...w....w..w.w....w.................w..ww
-wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww
-"#,
-        );
+        // let g = FloorPlan::from_string(
+        //     r#"
+        // wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww
+        // w..w....w..w.w.w..w...w..w...w.w....w.w..w
+        // ww..............ww.w.ww.ww.w.w..w.w...w.ww
+        // w.............ww.......w....w.w...www..w.w
+        // www..............www.w...w.w...www....w.ww
+        // w.......x.....ww.w.w.www.....ww...ww.ww..w
+        // w.w........................ww...ww.......w
+        // ww..............ww.........w.w.w....w.ww.w
+        // ww.w..........w.w.w............w.www.w.w.w
+        // w...w.....ww.w....w....................w.w
+        // w............w..w.w...x...........ww.w..ww
+        // w........w..ww.ww.w.........x....w.w.w...w
+        // w.........w...w..w...............w..w..w.w
+        // w..........w.w..w....................www.w
+        // w...x.....ww..w.www..............w..w...ww
+        // w.........w..w......w.w.w.........w..w...w
+        // w..............w.w.ww.w...........ww...www
+        // w........w.w.w.w.www....w..............w.w
+        // w.........w..ww.w....ww.....x......w.....w
+        // w...........w.w..................ww.w.ww.w
+        // w......w..w.......................w...w.ww
+        // w......w.w.w.w.....................w..w..w
+        // w..ww.ww.w..w..........x.........w..w.w.ww
+        // w.w..w..w..w..w...x.........w.w.ww.w.w...w
+        // w.w.w....w.w.w..............ww...........w
+        // w...w.w.w.....w..............w..ww.w.ww..w
+        // w..w.w....w.w.w.......ww....w.w.w.w..ww.ww
+        // w.....w.ww.w............w................w
+        // w.w....w......w..........................w
+        // ww..ww...ww.w..w...w................x....w
+        // w.w..w..w.w.w.w..........................w
+        // w...w..ww....w...................w.......w
+        // w.w..w.....................x............ww
+        // w..w.w............x..............ww.w.w..w
+        // w.w....w.....w.....................w..w..w
+        // w.w.w.ww..x...w...................w.ww.w.w
+        // ww..w.........w..................w...w...w
+        // w....w.w.........w............w...w...w.ww
+        // www.w.ww.......w.ww............w.w.w.....w
+        // w...w....w..w.w....w.................w..ww
+        // wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww
+        // "#,
+        // );
 
-        //         let g = FloorPlan::from_string(
-        //             r#"
+        // let g = FloorPlan::from_string(
+        //     r#"
         // wwwwwwwwwwwww
         // w.....wwwwwww
         // w..x..wwwwwww
@@ -308,7 +212,7 @@ wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww
         // w.......x...w
         // w...........w
         // wwwwwwwwwwwww"#,
-        //         );
+        // );
 
         // //         let g = FloorPlan::from_string(
         // //             r#"
@@ -317,15 +221,10 @@ wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww
         // wwwwwwwwww
         // "#,
         //         );
+        //
+        let g = FloorPlan::generate(70, 20, 12, 5, 3);
 
-        for y in 0..g.height() {
-            for x in 0..g.width() {
-                println!("({},{}) {:?} ", x, y, g.at(usizevec2(x, y)));
-            }
-            println!("");
-        }
-
-        println!("exhibit at 4,2 {:?}", g.at(usizevec2(4, 2)));
+        g.print();
 
         let level = Level::new(g, 2.);
         let wall_color = Colorf(vec3(0.5, 0.5, 0.5));
@@ -381,10 +280,10 @@ wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww
                 let angle_x = 0.;
                 let object_color: Colorf;
                 let y_offset = 0.;
-
-                match level.floor_plan.at(usizevec2(x, y)) {
+                let g = level.floor_plan.from_xy(x, y);
+                match level.floor_plan.at(g) {
                     GridElem::Wall => {
-                        for neighbor in level.floor_plan.valid_neighbors(usizevec2(x, y)) {
+                        for neighbor in level.floor_plan.valid_neighbors(g) {
                             if level.floor_plan.at(neighbor) == GridElem::Empty {
                                 for y_offset in [-2., 0., 2.] {
                                     if let Some(debug_wall) = &args.wall_model_debug {
@@ -402,13 +301,11 @@ wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww
                                             visible: true,
                                         });
                                     } else {
+                                        let (nx, ny) = level.floor_plan.to_xy(neighbor);
                                         objects.push(make_wall(
                                             x,
                                             y,
-                                            (
-                                                neighbor.x as i32 - x as i32,
-                                                neighbor.y as i32 - y as i32,
-                                            ),
+                                            (nx as i32 - x as i32, ny as i32 - y as i32),
                                             y_offset,
                                         ));
                                     }
@@ -426,13 +323,14 @@ wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww
                         mesh = model;
                         object_color = exhibits_color;
                         let pos = level.grid2world(x, y) + vec3(0., y_offset, 0.);
-                        assert!(level.world2grid(pos) == usizevec2(x, y));
+                        assert!(level.world2grid(pos) == level.floor_plan.from_xy(x, y));
+                        assert!(level.floor_plan.to_xy(level.world2grid(pos)) == (x, y));
 
                         log::info!(
-                            "instantiating exhibit at {}, world {}, aabb {:?}",
-                            usizevec2(x, y),
+                            "instantiating exhibit at {:?}, world {}, aabb {:?}",
+                            (x, y),
                             pos,
-                            level.aabb(usizevec2(x, y))
+                            level.aabb(level.floor_plan.from_xy(x, y))
                         );
                         objects.push(Object {
                             mesh,
@@ -463,7 +361,7 @@ wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww
         });
         let light_object_idx = objects.len() - 1;
 
-        let (x_empty, y_empty) = level.floor_plan.first_empty();
+        let (x_empty, y_empty) = level.floor_plan.to_xy(level.floor_plan.first_empty());
 
         let player = Player {
             pos: level.grid2world(x_empty, y_empty) + vec3(0.2, 0.4, 0.2),
@@ -472,9 +370,9 @@ wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww
         let initial_camera_pos = player.pos;
 
         log::info!(
-            "initial player position in world is {}, in grid is {}",
+            "initial player position in world is {}, in grid is {:?}",
             player.pos,
-            level.world2grid(player.pos)
+            level.floor_plan.to_xy(level.world2grid(player.pos))
         );
 
         let camera_dir = Vec3::ZERO;
@@ -648,9 +546,10 @@ wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww
 
             let a = self.player.pos;
             let p = self.level.world2grid(self.player.pos);
-            let b = self.level.grid2world(p.x, p.y);
+            let (x, y) = self.level.floor_plan.to_xy(p);
+            let b = self.level.grid2world(x, y);
             log::info!(
-                "player at {}. on grid {}, back on world {}, aabb {:?}",
+                "player at {}. on grid {:?}, back on world {}, aabb {:?}",
                 a,
                 p,
                 b,
@@ -796,7 +695,8 @@ wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww
 
             let a = self.player.pos.with_y(-7.);
             let p = self.level.world2grid(self.player.pos);
-            let b = self.level.grid2world(p.x, p.y).with_y(-7.);
+            let (x, y) = self.level.floor_plan.to_xy(p);
+            let b = self.level.grid2world(x, y).with_y(-7.);
             self.renderer.debug_draw_line_in_world_space(a, b, BLACK);
         }
 
@@ -827,7 +727,7 @@ wwwwwwwww"#,
 
         assert_eq!(g.width(), 9);
         assert_eq!(g.height(), 10);
-        assert_eq!(g.first_empty(), (1, 1));
+        assert_eq!(g.first_empty(), g.from_xy(1, 1));
     }
 
     #[test]
