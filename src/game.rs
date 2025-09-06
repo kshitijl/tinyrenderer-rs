@@ -21,8 +21,6 @@ pub enum ResolutionChangeAction {
 
 struct Settings {
     rotate_objects: bool,
-    move_light_with_player: bool,
-    topdown_camera: bool,
     draw_debug_lines: bool,
 }
 
@@ -129,12 +127,19 @@ struct Player {
     pos: Vec3,
 }
 
+#[derive(Copy, Clone, PartialEq)]
+enum ViewMode {
+    Topdown,
+    Fps { last_topdown_y: f32 },
+}
+
 pub struct World {
     renderer: Renderer,
     audio: AudioSystem,
     settings: Settings,
 
     camera: Camera,
+    vm: ViewMode,
 
     light: Spotlight,
     light_object_idx: usize,
@@ -391,7 +396,7 @@ impl World {
             scale: 0.3,
             color: Colorf(vec3(1., 1., 1.)),
             kind: ObjectKind::Light,
-            visible: false,
+            visible: true,
         });
         let light_object_idx = objects.len() - 1;
 
@@ -423,6 +428,7 @@ impl World {
             audio,
             objects,
             player,
+            vm: ViewMode::Topdown,
             camera: Camera {
                 pos: initial_camera_pos,
                 dir: camera_dir,
@@ -438,8 +444,6 @@ impl World {
             angle_time: Duration::from_secs(0),
             settings: Settings {
                 rotate_objects: false,
-                move_light_with_player: true,
-                topdown_camera: false,
                 draw_debug_lines: false,
             },
             level,
@@ -542,6 +546,42 @@ impl World {
         self.first_pressed_this_frame.contains(&key)
     }
 
+    #[allow(dead_code)]
+    fn log_player_position(&self) {
+        let a = self.player.pos;
+        let p = self.level.world2grid(self.player.pos);
+        let (x, y) = self.level.floor_plan.to_xy(p);
+        let b = self.level.grid2world(x, y);
+        log::info!(
+            "player at {}. on grid {:?}, back on world {}, aabb {:?}",
+            a,
+            p,
+            b,
+            self.level.aabb(p)
+        );
+    }
+
+    fn switch_view_mode(&mut self) {
+        match self.vm {
+            ViewMode::Topdown => {
+                self.vm = ViewMode::Fps {
+                    last_topdown_y: self.camera.mouse_y,
+                };
+
+                self.objects[self.light_object_idx].visible = false;
+                self.audio.set_volume(1.0);
+                self.camera.mouse_y = 0.0;
+            }
+            ViewMode::Fps { last_topdown_y } => {
+                self.vm = ViewMode::Topdown;
+
+                self.objects[self.light_object_idx].visible = true;
+                self.audio.set_volume(0.5);
+                self.camera.mouse_y = last_topdown_y;
+            }
+        }
+    }
+
     fn handle_keys(&mut self, since_last_frame: Duration) -> ResolutionChangeAction {
         let mut answer = ResolutionChangeAction::DoNothing;
 
@@ -565,33 +605,18 @@ impl World {
             self.renderer.render_settings.wireframe =
                 self.renderer.render_settings.wireframe.next();
         }
-        if self.was_key_pressed(KeyCode::Digit2) {
-            self.settings.topdown_camera = !self.settings.topdown_camera;
 
-            self.objects[self.light_object_idx].visible =
-                self.settings.topdown_camera || !self.settings.move_light_with_player;
-
-            if self.settings.topdown_camera {
-                self.audio.set_volume(0.5);
-            } else {
-                self.camera.mouse_y = 0.;
-                self.audio.set_volume(1.);
+        if self.is_key_down(KeyCode::KeyF) {
+            match self.vm {
+                ViewMode::Topdown => self.switch_view_mode(),
+                ViewMode::Fps { .. } => {
+                    // do nothing, we're already correct
+                }
             }
-
-            let a = self.player.pos;
-            let p = self.level.world2grid(self.player.pos);
-            let (x, y) = self.level.floor_plan.to_xy(p);
-            let b = self.level.grid2world(x, y);
-            log::info!(
-                "player at {}. on grid {:?}, back on world {}, aabb {:?}",
-                a,
-                p,
-                b,
-                self.level.aabb(p)
-            );
-        }
-        if self.was_key_pressed(KeyCode::Digit3) {
-            self.settings.move_light_with_player = !self.settings.move_light_with_player;
+        } else {
+            if self.vm != ViewMode::Topdown {
+                self.switch_view_mode()
+            }
         }
         if self.was_key_pressed(KeyCode::Digit4) {
             self.settings.rotate_objects = !self.settings.rotate_objects;
@@ -622,6 +647,29 @@ impl World {
         answer
     }
 
+    fn update_light(&mut self) {
+        match self.vm {
+            ViewMode::Topdown => {
+                self.light.dir = Mat3::from_rotation_y(self.camera.mouse_x) * vec3(0., 0., -1.);
+            }
+            ViewMode::Fps { last_topdown_y: _ } => {
+                self.light.dir = self.camera.dir;
+            }
+        }
+
+        // sway it gently
+        let t = self.time_since_start.as_secs_f32();
+        self.light.pos = self.player.pos.with_y(-3.6)
+            + vec3(0.1 * f32::sin(t), -0.6 + 0.1 * f32::cos(0.7 * t), -0.1);
+        self.light.dir += vec3(
+            0.05 * f32::sin(0.8 * t),
+            0.04 * f32::cos(1.1 * t),
+            -0.06 * f32::sin(1.8 * t),
+        );
+
+        self.objects[self.light_object_idx].pos = self.light.pos;
+    }
+
     fn animate_objects(&mut self, since_last_frame: Duration) {
         if self.settings.rotate_objects {
             self.angle_time += since_last_frame;
@@ -638,32 +686,17 @@ impl World {
                 }
             }
         }
-
-        if self.settings.move_light_with_player {
-            if self.settings.topdown_camera {
-                self.light.dir = Mat3::from_rotation_y(self.camera.mouse_x) * vec3(0., 0., -1.);
-            } else {
-                self.light.dir = self.camera.dir;
-            }
-
-            let t = self.time_since_start.as_secs_f32();
-            self.light.pos = self.player.pos.with_y(-3.6)
-                + vec3(0.1 * f32::sin(t), -0.6 + 0.1 * f32::cos(0.7 * t), -0.1);
-
-            self.objects[self.light_object_idx].pos = self.light.pos;
-        }
     }
 
-    fn y_angle_clamp(topdown_camera: bool) -> (f32, f32) {
-        if topdown_camera {
-            (-f32::consts::PI / 2.1, -f32::consts::PI / 5.)
-        } else {
-            (-f32::consts::PI / 2.1, f32::consts::PI / 3.)
+    fn y_angle_clamp(vm: ViewMode) -> (f32, f32) {
+        match vm {
+            ViewMode::Topdown => (-f32::consts::PI / 2.1, -f32::consts::PI / 5.),
+            ViewMode::Fps { .. } => (-f32::consts::PI / 2.1, f32::consts::PI / 3.),
         }
     }
 
     fn update_camera(&mut self) {
-        let (y1, y2) = Self::y_angle_clamp(self.settings.topdown_camera);
+        let (y1, y2) = Self::y_angle_clamp(self.vm);
         self.camera.mouse_y = self.camera.mouse_y.clamp(y1, y2);
 
         self.camera.dir = Mat3::from_rotation_y(self.camera.mouse_x)
@@ -672,10 +705,13 @@ impl World {
 
         self.camera.pos = self.player.pos;
 
-        if self.settings.topdown_camera {
-            self.camera.pos.y = 7.;
-        } else {
-            self.camera.pos.y = -3.;
+        match self.vm {
+            ViewMode::Topdown => {
+                self.camera.pos.y = 7.;
+            }
+            ViewMode::Fps { .. } => {
+                self.camera.pos.y = -3.;
+            }
         }
     }
 
@@ -689,6 +725,7 @@ impl World {
         let answer = self.handle_keys(since_last_frame);
         self.update_camera();
         self.animate_objects(since_last_frame);
+        self.update_light();
 
         answer
     }
