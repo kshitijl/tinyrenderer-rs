@@ -145,6 +145,11 @@ impl Renderer {
 
                     shader.vertex(object_idx, world_coords[i], normal)
                 });
+                let cull_backfaces = if object.kind == ObjectKind::WallOrFloor {
+                    false
+                } else {
+                    true
+                };
 
                 let triangle_result = triangle(
                     &screen_coords,
@@ -153,6 +158,7 @@ impl Renderer {
                     shader,
                     image.as_deref_mut(),
                     depths,
+                    cull_backfaces,
                 );
 
                 answer = answer + triangle_result;
@@ -650,6 +656,7 @@ fn triangle<S>(
     shader: &S,
     mut image: Option<&mut Image>,
     depths: &mut DepthBuffer,
+    cull_backfaces: bool,
 ) -> RenderingResult
 where
     S: Shader,
@@ -678,7 +685,7 @@ where
 
     answer.num_triangles_with_onscreen_bb += 1;
     let total_area = signed_triangle_area(a, b, c);
-    if total_area <= 0. {
+    if total_area <= 0. && cull_backfaces {
         return answer;
     }
 
