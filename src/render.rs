@@ -31,9 +31,11 @@ pub struct RenderSettings {
 
 pub struct Renderer {
     pub render_settings: RenderSettings,
-    image: Image,
+    first_pass_image: Image,
+    final_pass_image: Image,
     depths: DepthBuffer,
     light_depths: DepthBuffer,
+    exhibits_stencil: DepthBuffer,
     pub width: usize,
     debug_lines: Vec<(Vec3, Vec3, Color)>,
 }
@@ -44,14 +46,24 @@ enum ClippingPurpose {
     FirstPerson,
 }
 
+struct RenderBuffers<'a> {
+    color: Option<&'a mut Image>,
+    depth: &'a mut DepthBuffer,
+    stencil: Option<&'a mut DepthBuffer>,
+}
+
 impl Renderer {
     pub fn new(canvas_size: u16) -> Self {
-        let image = Image::new(canvas_size, canvas_size);
+        let first_pass_image = Image::new(canvas_size, canvas_size);
+        let final_pass_image = Image::new(canvas_size, canvas_size);
         let depths = DepthBuffer::new(canvas_size, canvas_size);
+        let exhibits_stencil = DepthBuffer::new(canvas_size, canvas_size);
         let light_depths = DepthBuffer::new(canvas_size, canvas_size);
 
         Self {
-            image,
+            first_pass_image,
+            final_pass_image,
+            exhibits_stencil,
             depths,
             light_depths,
             width: canvas_size as usize,
@@ -67,8 +79,7 @@ impl Renderer {
         object_idx: usize,
         object: &Object,
         uniforms: &RenderingUniforms,
-        mut image: Option<&mut Image>,
-        depths: &mut DepthBuffer,
+        buffers: &mut RenderBuffers,
         render_settings: &RenderSettings,
         shader: &S,
     ) -> RenderingResult
@@ -156,15 +167,14 @@ impl Renderer {
                     object_idx,
                     &[varyings[0], varyings[1], varyings[2]],
                     shader,
-                    image.as_deref_mut(),
-                    depths,
+                    buffers,
                     cull_backfaces,
                 );
 
                 answer = answer + triangle_result;
             }
 
-            if let Some(image) = &mut image
+            if let Some(image) = &mut buffers.color
                 && render_settings.wireframe.should_render_wireframe()
             {
                 for i in 0..3 {
@@ -253,6 +263,11 @@ impl Renderer {
             m_projection: m_projection_light,
             m_view: m_light_view,
         };
+        let mut light_pov_render_buffers = RenderBuffers {
+            color: None,
+            depth: &mut self.light_depths,
+            stencil: None,
+        };
         for (object_idx, object) in objects.iter().enumerate() {
             if object.kind == ObjectKind::Light || !object.visible {
                 continue;
@@ -261,8 +276,7 @@ impl Renderer {
                 object_idx,
                 object,
                 &light_uniforms,
-                None,
-                &mut self.light_depths,
+                &mut light_pov_render_buffers,
                 &self.render_settings,
                 &light_pov,
             );
@@ -289,6 +303,11 @@ impl Renderer {
             objects,
         );
 
+        let mut main_pass_render_buffers = RenderBuffers {
+            color: Some(&mut self.first_pass_image),
+            depth: &mut self.depths,
+            stencil: Some(&mut self.exhibits_stencil),
+        };
         for (object_idx, object) in objects.iter().enumerate() {
             if !object.visible {
                 continue;
@@ -298,8 +317,7 @@ impl Renderer {
                     object_idx,
                     object,
                     &uniforms,
-                    Some(&mut self.image),
-                    &mut self.depths,
+                    &mut main_pass_render_buffers,
                     &self.render_settings,
                     &light_pov,
                 ),
@@ -307,8 +325,7 @@ impl Renderer {
                     object_idx,
                     object,
                     &uniforms,
-                    Some(&mut self.image),
-                    &mut self.depths,
+                    &mut main_pass_render_buffers,
                     &self.render_settings,
                     &final_render,
                 ),
@@ -318,13 +335,20 @@ impl Renderer {
         }
 
         for (a, b, color) in self.debug_lines.iter() {
-            Self::render_debug_lines(self.width, &mut self.image, camera, *a, *b, *color);
+            Self::render_debug_lines(
+                self.width,
+                &mut self.first_pass_image,
+                camera,
+                *a,
+                *b,
+                *color,
+            );
         }
         answer
     }
 
     fn clear(&mut self) {
-        self.image.clear(coloru8(0x00, 0x00, 0x00));
+        self.first_pass_image.clear(coloru8(0x00, 0x00, 0x00));
         self.depths.clear();
         self.light_depths.clear();
     }
@@ -340,9 +364,9 @@ impl Renderer {
         let rendering_result = self.render(light, camera, objects);
         self.debug_lines.clear();
 
-        assert!(self.image.width() == self.width);
-        assert!(self.image.height() == self.width);
-        let image_buf = self.image.buf().as_slice();
+        assert!(self.first_pass_image.width() == self.width);
+        assert!(self.first_pass_image.height() == self.width);
+        let image_buf = self.first_pass_image.buf().as_slice();
 
         match self.render_settings.split_screen_mode {
             SplitScreenMode::Normal => {
@@ -662,8 +686,7 @@ fn triangle<S>(
     object_idx: usize,
     varyings: &[S::Varying; 3],
     shader: &S,
-    mut image: Option<&mut Image>,
-    depths: &mut DepthBuffer,
+    buffers: &mut RenderBuffers,
     cull_backfaces: bool,
 ) -> RenderingResult
 where
@@ -672,8 +695,8 @@ where
     let mut answer = RenderingResult::new();
     answer.num_unclipped_triangles_considered += 1;
 
-    let width = depths.width();
-    let height = depths.height();
+    let width = buffers.depth.width();
+    let height = buffers.depth.height();
 
     let [a, b, c] = verts;
 
@@ -726,11 +749,11 @@ where
                 answer.num_in_bounds_triangle_pixels_considered += 1;
                 let x = x as usize;
                 let y = y as usize;
-                if z < depths.get(x, y) {
-                    depths.set(x, y, z);
+                if z < buffers.depth.get(x, y) {
+                    buffers.depth.set(x, y, z);
                     answer.num_depth_buffer_sets += 1;
 
-                    if let Some(image) = &mut image {
+                    if let Some(image) = &mut buffers.color {
                         let color = shader.fragment(
                             object_idx,
                             varyings,
