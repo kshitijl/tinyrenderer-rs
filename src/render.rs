@@ -38,6 +38,12 @@ pub struct Renderer {
     debug_lines: Vec<(Vec3, Vec3, Color)>,
 }
 
+// TODO maybe add another one for topdown
+enum ClippingPurpose {
+    Shadow,
+    FirstPerson,
+}
+
 impl Renderer {
     pub fn new(canvas_size: u16) -> Self {
         let image = Image::new(canvas_size, canvas_size);
@@ -174,12 +180,11 @@ impl Renderer {
         self.debug_lines.push((a, b, color))
     }
 
-    // TODO make this different depending on topdown, FPS and shadow camera
-    //
-    // for shadow camera we want the near clipping plane further away so we can
-    // have more precision over the whole range
-    fn clipping_planes() -> (f32, f32) {
-        (1., 25.)
+    fn clipping_planes(p: ClippingPurpose) -> (f32, f32) {
+        match p {
+            ClippingPurpose::Shadow => (1., 15.),
+            ClippingPurpose::FirstPerson => (0.3, 45.),
+        }
     }
 
     fn render_debug_lines(
@@ -191,7 +196,7 @@ impl Renderer {
         color: Color,
     ) {
         let canvas_size = self_width as f32;
-        let (z_near, z_far) = Self::clipping_planes();
+        let (z_near, z_far) = Self::clipping_planes(ClippingPurpose::FirstPerson);
         let m_projection = Mat4::perspective_rh_gl(f32::to_radians(60.), 1.0, z_near, z_far);
 
         let m_viewport = Mat4::from_scale(Vec3::new(canvas_size / 2.0, canvas_size / 2.0, 1.))
@@ -225,8 +230,9 @@ impl Renderer {
         let mut answer = RenderingResult::new();
 
         let canvas_size = self.width as f32;
-        let (z_near, z_far) = Self::clipping_planes();
-        let m_projection_light = Mat4::perspective_rh_gl(f32::to_radians(70.), 1.0, z_near, z_far);
+        let (z_near_shadow, z_far_shadow) = Self::clipping_planes(ClippingPurpose::Shadow);
+        let m_projection_light =
+            Mat4::perspective_rh_gl(f32::to_radians(70.), 1.0, z_near_shadow, z_far_shadow);
 
         let m_viewport = Mat4::from_scale(Vec3::new(canvas_size / 2.0, canvas_size / 2.0, 1.))
             * Mat4::from_translation(Vec3::new(1.0, 1.0, 0.0));
@@ -257,6 +263,7 @@ impl Renderer {
             answer = answer + light_pov_rendering_result;
         }
 
+        let (z_near, z_far) = Self::clipping_planes(ClippingPurpose::FirstPerson);
         let m_projection_objects =
             Mat4::perspective_rh_gl(f32::to_radians(60.), 1.0, z_near, z_far);
 
