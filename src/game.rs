@@ -5,6 +5,8 @@ use crate::mesh::Mesh;
 use crate::render::*;
 use glam::{Mat3, Vec2, Vec3, vec2, vec3};
 use mazegen::{FloorPlan, GridElem, GridIdx};
+use rand;
+use rand::seq::{IndexedRandom, SliceRandom};
 use std::collections::HashSet;
 use std::f32;
 use std::time::Duration;
@@ -226,15 +228,39 @@ impl World {
 
         g.print();
 
-        let level = Level::new(g, 2.);
-        let wall_color = Colorf(vec3(0.5, 0.5, 0.5));
-        let wall_color1 = Colorf(vec3(1., 0., 0.));
-        let green = Colorf(vec3(0., 1., 0.));
-        let blue = Colorf(vec3(0., 0., 1.));
-        let yellow = Colorf(vec3(1., 1., 0.));
-        let exhibits_color = Colorf(vec3(1., 155. / 255., 0.));
+        let mut theme_colors = vec![
+            chex(0xea369e),
+            chex(0xea3e7a),
+            chex(0xfdf952),
+            chex(0xec6734),
+            chex(0xeb5943),
+            chex(0xeb4d59),
+            chex(0x68ded3),
+            chex(0x60cee6),
+            chex(0x58bff9),
+            chex(0x5fc697),
+            Colorf(vec3(0.1, 0.1, 0.1)),
+        ];
+        fn chex(hex: u32) -> Colorf {
+            let r = ((hex >> 16) & 0xff) as f32 / 255.;
+            let g = ((hex >> 8) & 0xff) as f32 / 255.;
+            let b = (hex & 0xff) as f32 / 255.;
+            Colorf(vec3(r, g, b))
+        }
 
+        let mut rng = rand::rng();
+        let floor_black = *theme_colors.choose(&mut rng).unwrap();
+        let floor_white = Colorf(vec3(0.9, 0.9, 0.9));
+        let mut wall_color = theme_colors.choose(&mut rng).unwrap();
+        // let exhibits_color = Colorf(vec3(1., 155. / 255., 0.));
+
+        let level = Level::new(g, 2.);
         let make_floor = |x, y| {
+            let color = if (x + y) % 2 == 0 {
+                floor_white
+            } else {
+                floor_black
+            };
             let y_offset = -3.;
 
             Object {
@@ -243,18 +269,18 @@ impl World {
                 angle_x: -90f32.to_radians(),
                 angle_y: 0.,
                 scale: 1.,
-                color: wall_color,
+                color,
                 kind: ObjectKind::WallOrFloor,
                 visible: true,
             }
         };
 
-        let make_wall = |x, y, facing, y_offset| {
-            let (angle_y, x_offset, z_offset, _color) = match facing {
-                (-1, 0) => (-90f32.to_radians(), -1., 0., wall_color1),
-                (1, 0) => (90f32.to_radians(), 1., 0., green),
-                (0, -1) => (180f32.to_radians(), 0., -1., blue),
-                (0, 1) => (0f32.to_radians(), 0., 1., yellow),
+        let make_wall = |x, y, facing, y_offset, wall_color: Colorf| {
+            let (angle_y, x_offset, z_offset) = match facing {
+                (-1, 0) => (-90f32.to_radians(), -1., 0.),
+                (1, 0) => (90f32.to_radians(), 1., 0.),
+                (0, -1) => (180f32.to_radians(), 0., -1.),
+                (0, 1) => (0f32.to_radians(), 0., 1.),
                 _ => panic!("weird facing {:?}", facing),
             };
 
@@ -278,9 +304,11 @@ impl World {
             for y in 0..level.floor_plan.height() {
                 let mesh: Mesh;
                 let angle_x = 0.;
-                let object_color: Colorf;
                 let y_offset = 0.;
                 let g = level.floor_plan.from_xy(x, y);
+                if (y * level.floor_plan.width() + x) % 100 == 0 {
+                    wall_color = theme_colors.choose(&mut rng).unwrap();
+                }
                 match level.floor_plan.at(g) {
                     GridElem::Wall => {
                         for neighbor in level.floor_plan.valid_neighbors(g) {
@@ -296,7 +324,7 @@ impl World {
                                             angle_x: 0.,
                                             angle_y: 0.,
                                             scale: 1.,
-                                            color: wall_color,
+                                            color: *wall_color,
                                             kind: ObjectKind::WallOrFloor,
                                             visible: true,
                                         });
@@ -307,6 +335,7 @@ impl World {
                                             y,
                                             (nx as i32 - x as i32, ny as i32 - y as i32),
                                             y_offset,
+                                            *wall_color,
                                         ));
                                     }
                                 }
@@ -321,7 +350,8 @@ impl World {
                             Mesh::from_file(exhibit_models.next().unwrap().as_str()).unwrap();
                         model.normalize();
                         mesh = model;
-                        object_color = exhibits_color;
+
+                        let color = *theme_colors.choose(&mut rng).unwrap();
                         let pos = level.grid2world(x, y) + vec3(0., y_offset, 0.);
                         assert!(level.world2grid(pos) == level.floor_plan.from_xy(x, y));
                         assert!(level.floor_plan.to_xy(level.world2grid(pos)) == (x, y));
@@ -338,7 +368,7 @@ impl World {
                             angle_x,
                             angle_y: 0.,
                             scale: 1.,
-                            color: object_color,
+                            color,
                             kind: ObjectKind::Exhibit,
                             visible: true,
                         });
@@ -622,7 +652,7 @@ impl World {
 
     fn y_angle_clamp(topdown_camera: bool) -> (f32, f32) {
         if topdown_camera {
-            (-f32::consts::PI / 2.1, -f32::consts::PI / 3.)
+            (-f32::consts::PI / 2.1, -f32::consts::PI / 5.)
         } else {
             (-f32::consts::PI / 2.1, f32::consts::PI / 3.)
         }
