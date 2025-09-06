@@ -1,7 +1,7 @@
 use ena::unify::{InPlaceUnificationTable, UnifyKey};
-use rand::{self, seq::SliceRandom};
+use rand::{self, Rng, seq::SliceRandom};
 use smallvec::SmallVec;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Copy, Debug, Clone, PartialEq)]
 pub enum GridElem {
@@ -71,6 +71,10 @@ impl FloorPlan {
         self.grid[g.0 as usize]
     }
 
+    fn set(&mut self, g: GridIdx, v: GridElem) {
+        self.grid[g.0 as usize] = v;
+    }
+
     fn is_valid(&self, x: i32, y: i32) -> bool {
         x >= 0 && y >= 0 && x < self.width as i32 && y < self.height as i32
     }
@@ -83,6 +87,31 @@ impl FloorPlan {
             grid,
         }
     }
+
+    fn room_would_fit(&self, x1: i32, y1: i32, x2: i32, y2: i32) -> bool {
+        self.is_valid(x1, y1) && self.is_valid(x2, y2)
+    }
+
+    fn stamp_room(&mut self, x1: i32, y1: i32, x2: i32, y2: i32) {
+        for x in x1..=x2 {
+            for y in y1..=y2 {
+                self.set(self.from_xy(x as u32, y as u32), GridElem::Empty);
+            }
+        }
+    }
+    fn print(&self) {
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let c = match self.at(self.from_xy(x, y)) {
+                    GridElem::Wall => "w",
+                    GridElem::Empty => ".",
+                    GridElem::Exhibit => "x",
+                };
+                print!("{}", c);
+            }
+            print!("\n");
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone, Eq, Hash, PartialEq)]
@@ -91,126 +120,167 @@ struct Wall {
     b: GridIdx,
 }
 
-fn generate_maze(width: u32, height: u32) -> String {
-    // let mut f = Self::new_all_walls(width, height);
+#[derive(Copy, Debug, PartialEq, Clone, Eq, Hash)]
+struct UFKey(u32);
 
-    let f = FloorPlan {
-        width,
-        height,
-        grid: Vec::new(),
-    };
+impl UnifyKey for UFKey {
+    type Value = ();
 
-    let mut u: InPlaceUnificationTable<GridIdx> = InPlaceUnificationTable::new();
+    fn index(&self) -> u32 {
+        self.0
+    }
 
-    for x in 0..width {
-        for y in 0..height {
-            u.new_key(());
+    fn from_index(u: u32) -> UFKey {
+        UFKey(u)
+    }
+
+    fn tag() -> &'static str {
+        "GridIdx"
+    }
+}
+struct UFWithOwnKey {
+    unify: InPlaceUnificationTable<UFKey>,
+    ok2uk: HashMap<GridIdx, UFKey>,
+    uk2ok: HashMap<UFKey, GridIdx>,
+}
+
+impl UFWithOwnKey {
+    fn new() -> Self {
+        Self {
+            unify: InPlaceUnificationTable::new(),
+            ok2uk: HashMap::new(),
+            uk2ok: HashMap::new(),
         }
     }
 
-    let mut all_walls: Vec<Wall> = Vec::new();
+    fn find(&mut self, g: GridIdx) -> Option<GridIdx> {
+        if let Some(key) = self.ok2uk.get(&g) {
+            let root = self.unify.find(*key);
+            self.uk2ok.get(&root).copied()
+        } else {
+            None
+        }
+    }
 
+    fn insert(&mut self, g: GridIdx) {
+        let key = self.unify.new_key(());
+        self.ok2uk.insert(g, key);
+        self.uk2ok.insert(key, g);
+    }
+
+    fn union(&mut self, k1: GridIdx, k2: GridIdx) {
+        let uk1 = self.ok2uk.get(&k1).unwrap();
+        let uk2 = self.ok2uk.get(&k2).unwrap();
+        self.unify.union(*uk1, *uk2)
+    }
+}
+
+fn generate_maze(
+    width: u32,
+    height: u32,
+    num_rooms: u32,
+    room_size: i32,
+    room_size_variance: i32,
+) -> String {
+    assert!(room_size > 0);
+    assert!(room_size_variance > 0);
+
+    let mut f = FloorPlan::new_all_walls(width, height);
+
+    let mut u = UFWithOwnKey::new();
+
+    let mut all_cells = Vec::new();
     for x in 0..width {
         for y in 0..height {
-            let this_cell = f.from_xy(x, y);
-            if x < width - 1 {
-                let right_neighbor = f.from_xy(x + 1, y);
-                all_walls.push(Wall {
-                    a: this_cell,
-                    b: right_neighbor,
-                });
-            }
-            if y < height - 1 {
-                let bottom_neighbor = f.from_xy(x, y + 1);
-                all_walls.push(Wall {
-                    a: this_cell,
-
-                    b: bottom_neighbor,
-                });
-            }
+            all_cells.push(f.from_xy(x, y));
         }
     }
 
     let mut rng = rand::rng();
-    all_walls.shuffle(&mut rng);
+    all_cells.shuffle(&mut rng);
 
-    let mut deleted_walls: HashSet<Wall> = HashSet::new();
-    for wall in all_walls.iter() {
-        let Wall { a, b } = *wall;
-        let set_a = u.find(a);
-        let set_b = u.find(b);
+    for cell in all_cells.iter() {
+        if f.at(*cell) == GridElem::Wall {
+            // if the number of distinct sets that empty neighbors belong to isn't exactly 1, then KD
 
-        if set_a != set_b {
-            u.union(a, b);
-            deleted_walls.insert(*wall);
+            let mut should_knock_down = false;
+            let mut the_set = None;
+            let mut num_empty_neighbors = 0;
+            for neighbor in f
+                .valid_neighbors(*cell)
+                .iter()
+                .filter(|n| f.at(**n) == GridElem::Empty)
+            {
+                num_empty_neighbors += 1;
+                let set = u.find(*neighbor).unwrap();
+                match the_set {
+                    None => {
+                        the_set = Some(set);
+                    }
+                    Some(already) => {
+                        if already != set {
+                            should_knock_down = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if num_empty_neighbors == 0 || num_empty_neighbors == 1 {
+                should_knock_down = true;
+            }
+
+            if should_knock_down {
+                f.set(*cell, GridElem::Empty);
+                u.insert(*cell);
+                for neighbor in f
+                    .valid_neighbors(*cell)
+                    .iter()
+                    .filter(|n| f.at(**n) == GridElem::Empty)
+                {
+                    u.union(*cell, *neighbor);
+                }
+            }
         }
     }
 
-    let mut answer: Vec<String> = Vec::new();
+    f.print();
+    println!("\n");
 
-    for y in 0..height {
-        let mut toprow: Vec<char> = Vec::new();
-        let mut botrow: Vec<char> = Vec::new();
+    let mut room_count = 0;
+    while room_count < num_rooms {
+        let x = Rng::random_range(&mut rng, 0..width - 1) as i32;
+        let y = Rng::random_range(&mut rng, 0..height - 1) as i32;
 
-        for x in 0..width {
-            let me = f.from_xy(x, y);
-            let right_neighbor = f.from_xy(x + 1, y);
-            let bottom_neighbor = f.from_xy(x, y + 1);
+        let size_x =
+            room_size - room_size_variance + Rng::random_range(&mut rng, 0..room_size_variance * 2);
+        let size_y =
+            room_size - room_size_variance + Rng::random_range(&mut rng, 0..room_size_variance * 2);
 
-            let tl = '.';
-            let mut tr = '.';
-            let mut bl = '.';
-            let mut br = '.';
-
-            if deleted_walls.contains(&Wall {
-                a: me,
-                b: bottom_neighbor,
-            }) {
-                print!(" ");
-            } else {
-                bl = 'w';
-                br = 'w';
-                print!("_");
-            }
-            if deleted_walls.contains(&Wall {
-                a: me,
-                b: right_neighbor,
-            }) {
-                print!(" ");
-            } else {
-                tr = 'w';
-                br = 'w';
-                print!("|");
-            }
-
-            toprow.push(tl);
-            toprow.push(tr);
-            botrow.push(bl);
-            botrow.push(br);
+        if f.room_would_fit(x, y, x + size_x, y + size_y) {
+            f.stamp_room(x, y, x + size_x, y + size_y);
+            room_count += 1;
+            f.set(
+                f.from_xy((x + size_x / 2) as u32, (y + size_y / 2) as u32),
+                GridElem::Exhibit,
+            );
         }
-
-        let toprow_s: String = toprow.iter().collect();
-        let botrow_s: String = botrow.iter().collect();
-
-        answer.push(toprow_s);
-        answer.push(botrow_s);
-
-        print!("\n");
     }
 
-    for row in answer {
-        println!("{}", row);
-    }
+    f.print();
+    println!("\n");
 
     "".to_string()
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn it_generates() {
-        generate_maze(16, 16);
+        generate_maze(16, 16, 3, 3, 1);
+        generate_maze(40, 40, 15, 7, 3);
 
         assert_eq!(1, 0);
     }
