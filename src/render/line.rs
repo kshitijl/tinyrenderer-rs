@@ -1,5 +1,4 @@
-use crate::image::Color;
-use crate::image::Image;
+use crate::image::{Color, Image, WidthAndHeight};
 use crate::render::RenderingResult;
 use glam::Vec2;
 

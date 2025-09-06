@@ -22,6 +22,21 @@ pub struct Image {
     height: usize,
 }
 
+pub trait WidthAndHeight {
+    fn width(&self) -> usize;
+    fn height(&self) -> usize;
+}
+
+pub trait ValidIndices: WidthAndHeight {
+    #[inline]
+    fn is_valid(&self, x: i32, y: i32) -> bool {
+        x >= 0 && y >= 0 && x < self.width() as i32 && y < self.height() as i32
+    }
+}
+
+impl ValidIndices for Image {}
+impl ValidIndices for DepthBuffer {}
+
 impl Image {
     pub fn new(width: u16, height: u16) -> Self {
         let width = width as usize;
@@ -34,16 +49,6 @@ impl Image {
         self.buf.as_mut_slice().fill(c);
     }
 
-    #[inline]
-    pub fn width(&self) -> usize {
-        self.width as _
-    }
-
-    #[inline]
-    pub fn height(&self) -> usize {
-        self.height as _
-    }
-
     pub fn buf(&self) -> &Vec<Color> {
         &self.buf
     }
@@ -53,6 +58,25 @@ impl Image {
         let y = self.height - y - 1;
         let idx = y * self.width + x;
         self.buf[idx] = color;
+    }
+
+    #[inline]
+    pub fn get(&self, x: usize, y: usize) -> Color {
+        let y = self.height - y - 1;
+        let idx = y * self.width + x;
+        self.buf[idx]
+    }
+}
+
+impl WidthAndHeight for Image {
+    #[inline]
+    fn width(&self) -> usize {
+        self.width as _
+    }
+
+    #[inline]
+    fn height(&self) -> usize {
+        self.height as _
     }
 }
 
@@ -72,8 +96,8 @@ impl DepthBuffer {
         }
     }
 
-    pub fn clear(&mut self) {
-        self.buf.as_mut_slice().fill(f32::MAX)
+    pub fn clear(&mut self, v: f32) {
+        self.buf.as_mut_slice().fill(v)
     }
 
     pub fn min_depth(&self) -> f32 {
@@ -107,16 +131,6 @@ impl DepthBuffer {
     }
 
     #[inline]
-    pub fn width(&self) -> usize {
-        self.width as _
-    }
-
-    #[inline]
-    pub fn height(&self) -> usize {
-        self.height as _
-    }
-
-    #[inline]
     pub fn set(&mut self, x: usize, y: usize, val: f32) {
         let y = self.height - y - 1;
         let idx = y * self.width + x;
@@ -128,5 +142,17 @@ impl DepthBuffer {
         let y = self.height - y - 1;
         let idx = y * self.width + x;
         self.buf[idx]
+    }
+}
+
+impl WidthAndHeight for DepthBuffer {
+    #[inline]
+    fn width(&self) -> usize {
+        self.width as _
+    }
+
+    #[inline]
+    fn height(&self) -> usize {
+        self.height as _
     }
 }

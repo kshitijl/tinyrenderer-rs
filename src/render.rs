@@ -52,6 +52,37 @@ struct RenderBuffers<'a> {
     stencil: Option<&'a mut DepthBuffer>,
 }
 
+struct FsppArgs<'a> {
+    color_in: &'a Image,
+    stencil_in: &'a DepthBuffer,
+    color_out: &'a mut Image,
+}
+
+fn pixelate_and_glow(args: &mut FsppArgs) {
+    for x in 0..args.color_in.width() {
+        for y in 0..args.color_in.height() {
+            let mut s = 0.;
+            for dx in -2..=2 {
+                for dy in -2..=2 {
+                    let nx = x as i32 + dx * 5;
+                    let ny = y as i32 + dy * 5;
+
+                    if args.stencil_in.is_valid(nx, ny) {
+                        s = f32::max(s, args.stencil_in.get(nx as usize, ny as usize));
+                    }
+                }
+            }
+            let pixel_size = usize::max(1, (s * 4.).ceil() as usize);
+
+            let color = args
+                .color_in
+                .get(x - x % pixel_size, y - y % pixel_size)
+                .as_vec4();
+            args.color_out.set(x, y, color.as_u8vec4());
+        }
+    }
+}
+
 impl Renderer {
     pub fn new(canvas_size: u16) -> Self {
         let first_pass_image = Image::new(canvas_size, canvas_size);
@@ -246,111 +277,133 @@ impl Renderer {
         let mut answer = RenderingResult::new();
 
         let canvas_size = self.width as f32;
-        let (z_near_shadow, z_far_shadow) = Self::clipping_planes(ClippingPurpose::Shadow);
-        let m_projection_light =
-            Mat4::perspective_rh_gl(f32::to_radians(70.), 1.0, z_near_shadow, z_far_shadow);
-
         let m_viewport = Mat4::from_scale(Vec3::new(canvas_size / 2.0, canvas_size / 2.0, 1.))
             * Mat4::from_translation(Vec3::new(1.0, 1.0, 0.0));
 
-        let light_pov = NoopShaderColorsWhite::new();
+        let noop_white_shader = NoopShaderColorsWhite::new();
 
         // First from the light's POV
-        let m_light_view = Mat4::look_to_rh(light.pos, light.dir, camera.up);
+        let light_uniforms = {
+            let (z_near_shadow, z_far_shadow) = Self::clipping_planes(ClippingPurpose::Shadow);
+            let m_projection_light =
+                Mat4::perspective_rh_gl(f32::to_radians(70.), 1.0, z_near_shadow, z_far_shadow);
 
-        let light_uniforms = RenderingUniforms {
-            m_viewport,
-            m_projection: m_projection_light,
-            m_view: m_light_view,
-        };
-        let mut light_pov_render_buffers = RenderBuffers {
-            color: None,
-            depth: &mut self.light_depths,
-            stencil: None,
-        };
-        for (object_idx, object) in objects.iter().enumerate() {
-            if object.kind == ObjectKind::Light || !object.visible {
-                continue;
-            }
-            let light_pov_rendering_result = Self::render_object(
-                object_idx,
-                object,
-                &light_uniforms,
-                &mut light_pov_render_buffers,
-                &self.render_settings,
-                &light_pov,
-            );
-            answer = answer + light_pov_rendering_result;
-        }
+            let m_light_view = Mat4::look_to_rh(light.pos, light.dir, camera.up);
 
-        let (z_near, z_far) = Self::clipping_planes(ClippingPurpose::FirstPerson);
-        let m_projection_objects =
-            Mat4::perspective_rh_gl(f32::to_radians(60.), 1.0, z_near, z_far);
-
-        let m_view = Mat4::look_to_rh(camera.pos, camera.dir, camera.up);
-        let uniforms = RenderingUniforms {
-            m_viewport,
-            m_projection: m_projection_objects,
-            m_view,
-        };
-
-        // Now the final render
-        let final_render = FinalRenderShader::new(
-            *light,
-            light_uniforms.m_projection * light_uniforms.m_view,
-            light_uniforms.m_viewport,
-            &self.light_depths,
-            objects,
-        );
-
-        let mut main_pass_render_buffers = RenderBuffers {
-            color: Some(&mut self.first_pass_image),
-            depth: &mut self.depths,
-            stencil: Some(&mut self.exhibits_stencil),
-        };
-        for (object_idx, object) in objects.iter().enumerate() {
-            if !object.visible {
-                continue;
-            }
-            let render_result = match object.kind {
-                ObjectKind::Light => Self::render_object(
-                    object_idx,
-                    object,
-                    &uniforms,
-                    &mut main_pass_render_buffers,
-                    &self.render_settings,
-                    &light_pov,
-                ),
-                ObjectKind::Exhibit { .. } | ObjectKind::WallOrFloor => Self::render_object(
-                    object_idx,
-                    object,
-                    &uniforms,
-                    &mut main_pass_render_buffers,
-                    &self.render_settings,
-                    &final_render,
-                ),
+            let light_uniforms = RenderingUniforms {
+                m_viewport,
+                m_projection: m_projection_light,
+                m_view: m_light_view,
             };
+            let mut light_pov_render_buffers = RenderBuffers {
+                color: None,
+                depth: &mut self.light_depths,
+                stencil: None,
+            };
+            for (object_idx, object) in objects.iter().enumerate() {
+                if object.kind == ObjectKind::Light || !object.visible {
+                    continue;
+                }
+                let light_pov_rendering_result = Self::render_object(
+                    object_idx,
+                    object,
+                    &light_uniforms,
+                    &mut light_pov_render_buffers,
+                    &self.render_settings,
+                    &noop_white_shader,
+                );
+                answer = answer + light_pov_rendering_result;
+            }
 
-            answer = answer + render_result;
+            light_uniforms
+        };
+
+        // Now the main render pass
+        {
+            let (z_near, z_far) = Self::clipping_planes(ClippingPurpose::FirstPerson);
+            let m_projection_objects =
+                Mat4::perspective_rh_gl(f32::to_radians(60.), 1.0, z_near, z_far);
+
+            let m_view = Mat4::look_to_rh(camera.pos, camera.dir, camera.up);
+            let uniforms = RenderingUniforms {
+                m_viewport,
+                m_projection: m_projection_objects,
+                m_view,
+            };
+            let main_render = MainRenderShader::new(
+                *light,
+                light_uniforms.m_projection * light_uniforms.m_view,
+                light_uniforms.m_viewport,
+                &self.light_depths,
+                objects,
+            );
+
+            let mut main_pass_buffers = RenderBuffers {
+                color: Some(&mut self.first_pass_image),
+                depth: &mut self.depths,
+                stencil: Some(&mut self.exhibits_stencil),
+            };
+            for (object_idx, object) in objects.iter().enumerate() {
+                if !object.visible {
+                    continue;
+                }
+                let render_result = match object.kind {
+                    ObjectKind::Light => Self::render_object(
+                        object_idx,
+                        object,
+                        &uniforms,
+                        &mut main_pass_buffers,
+                        &self.render_settings,
+                        &noop_white_shader,
+                    ),
+                    ObjectKind::Exhibit { .. } | ObjectKind::WallOrFloor => Self::render_object(
+                        object_idx,
+                        object,
+                        &uniforms,
+                        &mut main_pass_buffers,
+                        &self.render_settings,
+                        &main_render,
+                    ),
+                };
+
+                answer = answer + render_result;
+            }
         }
 
-        for (a, b, color) in self.debug_lines.iter() {
-            Self::render_debug_lines(
-                self.width,
-                &mut self.first_pass_image,
-                camera,
-                *a,
-                *b,
-                *color,
-            );
+        // Fullscreen postprocessing
+        {
+            let mut args = FsppArgs {
+                color_in: &self.first_pass_image,
+                stencil_in: &self.exhibits_stencil,
+                color_out: &mut self.final_pass_image,
+            };
+            pixelate_and_glow(&mut args);
+        }
+
+        // Draw any debug lines requested by the game. This has gotta happen
+        // last otherwise they'll be overwritten by other passes.
+        {
+            for (a, b, color) in self.debug_lines.iter() {
+                Self::render_debug_lines(
+                    self.width,
+                    &mut self.final_pass_image,
+                    camera,
+                    *a,
+                    *b,
+                    *color,
+                );
+            }
         }
         answer
     }
 
     fn clear(&mut self) {
+        // don't bother clearing the final pass image, it all gets written to anyway
+
         self.first_pass_image.clear(coloru8(0x00, 0x00, 0x00));
-        self.depths.clear();
-        self.light_depths.clear();
+        self.depths.clear(f32::MAX);
+        self.light_depths.clear(f32::MAX);
+        self.exhibits_stencil.clear(0.);
     }
 
     pub fn draw(
@@ -364,9 +417,9 @@ impl Renderer {
         let rendering_result = self.render(light, camera, objects);
         self.debug_lines.clear();
 
-        assert!(self.first_pass_image.width() == self.width);
-        assert!(self.first_pass_image.height() == self.width);
-        let image_buf = self.first_pass_image.buf().as_slice();
+        assert!(self.final_pass_image.width() == self.width);
+        assert!(self.final_pass_image.height() == self.width);
+        let image_buf = self.final_pass_image.buf().as_slice();
 
         match self.render_settings.split_screen_mode {
             SplitScreenMode::Normal => {
@@ -525,19 +578,41 @@ trait FragOutput {
 struct JustColor(Color);
 
 impl FragOutput for JustColor {
+    #[inline]
     fn color(&self) -> Color {
         self.0
     }
 
+    #[inline]
     fn stencil(&self) -> f32 {
         0.
     }
 }
 
+struct ColorStencil {
+    color: Color,
+    stencil: f32,
+}
+
+impl FragOutput for ColorStencil {
+    #[inline]
+    fn color(&self) -> Color {
+        self.color
+    }
+
+    #[inline]
+    fn stencil(&self) -> f32 {
+        self.stencil
+    }
+}
+
 impl FragOutput for () {
+    #[inline]
     fn color(&self) -> Color {
         coloru8(255, 255, 255)
     }
+
+    #[inline]
     fn stencil(&self) -> f32 {
         0.
     }
@@ -572,7 +647,7 @@ impl NoopShaderColorsWhite {
     }
 }
 
-struct FinalRenderShader<'buf> {
+struct MainRenderShader<'buf> {
     spotlight: Spotlight,
     light_vp: Mat4,
     light_viewport: Mat4,
@@ -587,9 +662,9 @@ struct FinalRenderVarying {
     normal: Vec4,
 }
 
-impl<'buf> Shader for FinalRenderShader<'buf> {
+impl<'buf> Shader for MainRenderShader<'buf> {
     type Varying = FinalRenderVarying;
-    type F = JustColor;
+    type F = ColorStencil;
 
     fn vertex(&self, _object_idx: usize, world_coord: Vec4, normal: Vec4) -> FinalRenderVarying {
         FinalRenderVarying {
@@ -603,7 +678,7 @@ impl<'buf> Shader for FinalRenderShader<'buf> {
         object_idx: usize,
         varyings: &[FinalRenderVarying; 3],
         b: BaryCoords,
-    ) -> JustColor {
+    ) -> ColorStencil {
         let constant_dir_light = vec4(0.1, -0.2, 0.3, 0.).normalize();
         let ambient_factor = 0.1;
         let dir_factor = 0.2;
@@ -677,21 +752,26 @@ impl<'buf> Shader for FinalRenderShader<'buf> {
             + dir_intensity * dir_factor;
 
         let mut object_color = self.objects[object_idx].color.0;
+        let mut stencil = 0.0;
 
         match self.objects[object_idx].kind {
             ObjectKind::Exhibit { hiddenness } => {
                 object_color.z = hiddenness;
+                stencil = hiddenness;
             }
             _ => { // do nothing
             }
         }
 
         let color = object_color * total_intensity;
-        JustColor(colorvf(color * 255.))
+        ColorStencil {
+            color: colorvf(color * 255.),
+            stencil,
+        }
     }
 }
 
-impl<'buf> FinalRenderShader<'buf> {
+impl<'buf> MainRenderShader<'buf> {
     fn new(
         spotlight: Spotlight,
         light_vp: Mat4,
@@ -773,7 +853,8 @@ where
             // assert!(z >= 0.);
             // assert!(z <= 1.);
             answer.num_triangle_pixels_considered += 1;
-            if x >= 0 && x < width as i32 && y >= 0 && y < height as i32 {
+            if buffers.depth.is_valid(x, y) {
+                // if x >= 0 && x < width as i32 && y >= 0 && y < height as i32 {
                 answer.num_in_bounds_triangle_pixels_considered += 1;
                 let x = x as usize;
                 let y = y as usize;
@@ -781,14 +862,16 @@ where
                     buffers.depth.set(x, y, z);
                     answer.num_depth_buffer_sets += 1;
 
+                    let frag_output =
+                        shader.fragment(object_idx, varyings, BaryCoords(vec3(alpha, beta, gamma)));
+
                     if let Some(image) = &mut buffers.color {
-                        let frag_output = shader.fragment(
-                            object_idx,
-                            varyings,
-                            BaryCoords(vec3(alpha, beta, gamma)),
-                        );
                         image.set(x, y, frag_output.color());
                         answer.num_pixels_drawn += 1
+                    }
+
+                    if let Some(stencil) = &mut buffers.stencil {
+                        stencil.set(x, y, frag_output.stencil());
                     }
                 }
             }
