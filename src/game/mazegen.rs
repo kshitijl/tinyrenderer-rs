@@ -1,5 +1,5 @@
 use ena::unify::{InPlaceUnificationTable, UnifyKey};
-use rand::{self, Rng, seq::SliceRandom};
+use rand::{self, Rng, rngs::ThreadRng, seq::SliceRandom};
 use smallvec::SmallVec;
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -27,16 +27,19 @@ impl FloorPlan {
         self.width
     }
 
+    #[inline]
     pub fn to_xy(&self, g: GridIdx) -> (u32, u32) {
         let x = g.0 % self.width();
         let y = g.0 / self.width();
         (x, y)
     }
 
+    #[inline]
     pub fn from_xy(&self, x: u32, y: u32) -> GridIdx {
         GridIdx(y * self.width() + x)
     }
 
+    #[inline]
     pub fn valid_neighbors_no_diagonals(&self, g: GridIdx) -> SmallVec<[GridIdx; 4]> {
         let mut answer = SmallVec::new();
         let (x, y) = self.to_xy(g);
@@ -51,6 +54,7 @@ impl FloorPlan {
         answer
     }
 
+    #[inline]
     pub fn valid_neighbors_at_dist(&self, g: GridIdx, dist: i32) -> SmallVec<[GridIdx; 4]> {
         let mut answer = SmallVec::new();
         let (x, y) = self.to_xy(g);
@@ -77,6 +81,7 @@ impl FloorPlan {
             .collect()
     }
 
+    #[inline]
     pub fn at(&self, g: GridIdx) -> GridElem {
         self.grid[g.0 as usize]
     }
@@ -95,6 +100,19 @@ impl FloorPlan {
             width,
             height,
             grid,
+        }
+    }
+
+    pub fn random_empty(&self, rng: &mut ThreadRng) -> GridIdx {
+        loop {
+            let x = rng.random_range(0..self.width);
+            let y = rng.random_range(0..self.height);
+
+            let g = self.from_xy(x, y);
+
+            if self.at(g) == GridElem::Empty {
+                return g;
+            }
         }
     }
 

@@ -186,6 +186,9 @@ struct Args {
     #[arg(short, long, default_value = "assets/head.obj")]
     exhibit_models: Vec<String>,
 
+    #[arg(short, long, default_value = "assets/man.obj")]
+    guard_model: String,
+
     #[arg(short, long)]
     wall_model_debug: Option<String>,
 

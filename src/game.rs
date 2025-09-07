@@ -93,6 +93,11 @@ impl Level {
         }
     }
 
+    fn grididx2world(&self, g: GridIdx) -> Vec3 {
+        let (x, y) = self.floor_plan.to_xy(g);
+        self.grid2world(x, y)
+    }
+
     fn grid2world(&self, x: u32, y: u32) -> Vec3 {
         vec3(
             (x as f32) * self.grid_size,
@@ -136,6 +141,45 @@ enum ViewMode {
 #[derive(Debug)]
 struct ObjectIdx(usize);
 
+#[derive(Debug, Clone, Copy)]
+enum GridDir {
+    XPlus,
+    XMinus,
+    ZPlus,
+    ZMinus,
+}
+
+impl GridDir {
+    fn flip(&self) -> Self {
+        match *self {
+            GridDir::XPlus => GridDir::XMinus,
+            GridDir::XMinus => GridDir::XPlus,
+            GridDir::ZPlus => GridDir::ZMinus,
+            GridDir::ZMinus => GridDir::ZPlus,
+        }
+    }
+    fn to_world_dir(&self) -> Vec3 {
+        match *self {
+            GridDir::XPlus => vec3(1., 0., 0.),
+            GridDir::XMinus => vec3(-1., 0., 0.),
+            GridDir::ZPlus => vec3(0., 0., 1.),
+            GridDir::ZMinus => vec3(0., 0., -1.),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct Guard {
+    idx: ObjectIdx,
+    facing: GridDir,
+    // state: Alarmed|Beat
+    // in alarmed state the blue and red glow comes
+    // otherwise white glow
+    // in alarmed state follow player, otherwise just execute beat
+    // sometimes change direction to a random direction in guard update
+    // gets alarmed if within 10 grid points of player or something
+}
+
 pub struct World {
     renderer: Renderer,
     audio: AudioSystem,
@@ -148,6 +192,7 @@ pub struct World {
     light_object_idx: usize,
 
     player: Player,
+    guards: Vec<Guard>,
     objects: Vec<Object>,
     level: Level,
     g2o: HashMap<GridIdx, ObjectIdx>,
@@ -258,7 +303,6 @@ impl World {
 
         for x in 0..level.floor_plan.width() {
             for y in 0..level.floor_plan.height() {
-                let mesh: Mesh;
                 let angle_x = 0.;
                 let y_offset = 0.;
                 let g = level.floor_plan.from_xy(x, y);
@@ -305,7 +349,6 @@ impl World {
                         let mut model =
                             Mesh::from_file(exhibit_models.next().unwrap().as_str()).unwrap();
                         model.normalize();
-                        mesh = model;
 
                         let color = *theme_colors.choose(&mut rng).unwrap();
                         let pos = level.grid2world(x, y) + vec3(0., y_offset, 0.);
@@ -319,7 +362,7 @@ impl World {
                             level.aabb(level.floor_plan.from_xy(x, y))
                         );
                         objects.push(Object {
-                            mesh,
+                            mesh: model,
                             pos,
                             angle_x,
                             angle_y: 0.,
@@ -349,6 +392,39 @@ impl World {
         });
         let light_object_idx = objects.len() - 1;
 
+        let mut guards = Vec::new();
+        {
+            let guard_color = Colorf(vec3(0.8, 0.2, 0.6));
+            let dirs = [
+                GridDir::XPlus,
+                GridDir::XMinus,
+                GridDir::ZPlus,
+                GridDir::ZMinus,
+            ];
+            for _ in 0..5 {
+                let pos = level.grididx2world(level.floor_plan.random_empty(&mut rng));
+
+                let mut guard_mesh = Mesh::from_file(&args.guard_model).unwrap();
+                guard_mesh.normalize();
+
+                objects.push(Object {
+                    mesh: guard_mesh,
+                    pos,
+                    angle_x: 0.,
+                    angle_y: 0.,
+                    scale: 1.,
+                    color: guard_color,
+                    kind: ObjectKind::Light,
+                    visible: true,
+                });
+
+                guards.push(Guard {
+                    idx: ObjectIdx(objects.len() - 1),
+                    facing: *dirs.choose(&mut rng).unwrap(),
+                });
+            }
+        }
+
         let (x_empty, y_empty) = level.floor_plan.to_xy(level.floor_plan.first_empty());
 
         let player = Player {
@@ -377,6 +453,7 @@ impl World {
             audio,
             objects,
             player,
+            guards,
             vm: ViewMode::Topdown,
             camera: Camera {
                 pos: initial_camera_pos,
@@ -696,6 +773,23 @@ impl World {
         }
     }
 
+    fn update_guards(&mut self, since_last_frame: Duration) {
+        let speed = 1.;
+        for guard in self.guards.iter_mut() {
+            let guard_obj = &mut self.objects[guard.idx.0];
+
+            let motion_dir = guard.facing.to_world_dir();
+            let desired_pos = guard_obj.pos + motion_dir * speed * since_last_frame.as_secs_f32();
+
+            let desired_grid_pos = self.level.world2grid(desired_pos);
+            if self.level.floor_plan.at(desired_grid_pos) != GridElem::Empty {
+                guard.facing = guard.facing.flip();
+            } else {
+                guard_obj.pos = desired_pos;
+            }
+        }
+    }
+
     pub fn update(
         &mut self,
         since_last_frame: Duration,
@@ -707,6 +801,7 @@ impl World {
         self.update_camera();
         self.animate_objects(since_last_frame);
         self.update_light();
+        self.update_guards(since_last_frame);
 
         answer
     }
