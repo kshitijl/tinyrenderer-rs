@@ -35,7 +35,6 @@ pub struct Renderer {
     final_pass_image: Image,
     depths: DepthBuffer,
     light_depths: DepthBuffer,
-    exhibits_stencil: DepthBuffer,
     pub width: usize,
     debug_lines: Vec<(Vec3, Vec3, Color)>,
 }
@@ -47,40 +46,10 @@ enum ClippingPurpose {
 }
 
 struct RenderBuffers<'a> {
+    width: usize,
+    height: usize,
     color: Option<&'a mut Image>,
-    depth: &'a mut DepthBuffer,
-    stencil: Option<&'a mut DepthBuffer>,
-}
-
-struct FsppArgs<'a> {
-    color_in: &'a Image,
-    stencil_in: &'a DepthBuffer,
-    color_out: &'a mut Image,
-}
-
-fn pixelate_and_glow(args: &mut FsppArgs) {
-    for x in 0..args.color_in.width() {
-        for y in 0..args.color_in.height() {
-            let mut s = 0.;
-            for dx in -2..=2 {
-                for dy in -2..=2 {
-                    let nx = x as i32 + dx * 5;
-                    let ny = y as i32 + dy * 5;
-
-                    if args.stencil_in.is_valid(nx, ny) {
-                        s = f32::max(s, args.stencil_in.get(nx as usize, ny as usize));
-                    }
-                }
-            }
-            let pixel_size = usize::max(1, (s * 4.).ceil() as usize);
-
-            let color = args
-                .color_in
-                .get(x - x % pixel_size, y - y % pixel_size)
-                .as_vec4();
-            args.color_out.set(x, y, color.as_u8vec4());
-        }
-    }
+    depth: Option<&'a mut DepthBuffer>,
 }
 
 impl Renderer {
@@ -88,13 +57,11 @@ impl Renderer {
         let first_pass_image = Image::new(canvas_size, canvas_size);
         let final_pass_image = Image::new(canvas_size, canvas_size);
         let depths = DepthBuffer::new(canvas_size, canvas_size);
-        let exhibits_stencil = DepthBuffer::new(canvas_size, canvas_size);
         let light_depths = DepthBuffer::new(canvas_size, canvas_size);
 
         Self {
             first_pass_image,
             final_pass_image,
-            exhibits_stencil,
             depths,
             light_depths,
             width: canvas_size as usize,
@@ -109,6 +76,7 @@ impl Renderer {
     fn render_object<S>(
         object_idx: usize,
         object: &Object,
+        global_scale: f32,
         uniforms: &RenderingUniforms,
         buffers: &mut RenderBuffers,
         render_settings: &RenderSettings,
@@ -125,7 +93,8 @@ impl Renderer {
             m_view,
         } = uniforms;
 
-        let m_scale = Mat4::from_scale(vec3(object.scale, object.scale, object.scale));
+        let scale = object.scale * global_scale;
+        let m_scale = Mat4::from_scale(vec3(scale, scale, scale));
         let m_rot = Mat4::from_rotation_y(object.angle_y) * Mat4::from_rotation_x(object.angle_x);
         let m_trans = Mat4::from_translation(object.pos);
         let m_model = m_trans * m_rot * m_scale;
@@ -296,9 +265,10 @@ impl Renderer {
                 m_view: m_light_view,
             };
             let mut light_pov_render_buffers = RenderBuffers {
+                width: self.width,
+                height: self.width,
                 color: None,
-                depth: &mut self.light_depths,
-                stencil: None,
+                depth: Some(&mut self.light_depths),
             };
             for (object_idx, object) in objects.iter().enumerate() {
                 if object.kind == ObjectKind::Light || !object.visible {
@@ -307,6 +277,7 @@ impl Renderer {
                 let light_pov_rendering_result = Self::render_object(
                     object_idx,
                     object,
+                    1.0,
                     &light_uniforms,
                     &mut light_pov_render_buffers,
                     &self.render_settings,
@@ -339,9 +310,10 @@ impl Renderer {
             );
 
             let mut main_pass_buffers = RenderBuffers {
+                width: self.width,
+                height: self.width,
                 color: Some(&mut self.first_pass_image),
-                depth: &mut self.depths,
-                stencil: Some(&mut self.exhibits_stencil),
+                depth: Some(&mut self.depths),
             };
             for (object_idx, object) in objects.iter().enumerate() {
                 if !object.visible {
@@ -351,6 +323,7 @@ impl Renderer {
                     ObjectKind::Light => Self::render_object(
                         object_idx,
                         object,
+                        1.0,
                         &uniforms,
                         &mut main_pass_buffers,
                         &self.render_settings,
@@ -359,6 +332,7 @@ impl Renderer {
                     ObjectKind::Exhibit { .. } | ObjectKind::WallOrFloor => Self::render_object(
                         object_idx,
                         object,
+                        1.0,
                         &uniforms,
                         &mut main_pass_buffers,
                         &self.render_settings,
@@ -370,14 +344,56 @@ impl Renderer {
             }
         }
 
-        // Fullscreen postprocessing
+        // Now the special effects pass.
         {
-            let mut args = FsppArgs {
-                color_in: &self.first_pass_image,
-                stencil_in: &self.exhibits_stencil,
-                color_out: &mut self.final_pass_image,
+            self.final_pass_image
+                .buf_mut()
+                .copy_from_slice(self.first_pass_image.buf());
+            let (z_near, z_far) = Self::clipping_planes(ClippingPurpose::FirstPerson);
+            let m_projection_objects =
+                Mat4::perspective_rh_gl(f32::to_radians(60.), 1.0, z_near, z_far);
+
+            let m_view = Mat4::look_to_rh(camera.pos, camera.dir, camera.up);
+            let uniforms = RenderingUniforms {
+                m_viewport,
+                m_projection: m_projection_objects,
+                m_view,
             };
-            pixelate_and_glow(&mut args);
+            let fx_shader = PixelationShader {
+                color_in: &self.first_pass_image,
+                objects,
+            };
+
+            let mut fx_pass_buffers = RenderBuffers {
+                width: self.width,
+                height: self.width,
+                color: Some(&mut self.final_pass_image),
+                depth: None,
+            };
+            for (object_idx, object) in objects.iter().enumerate() {
+                if !object.visible {
+                    continue;
+                }
+                match object.kind {
+                    ObjectKind::Light => {
+                        // do nothing
+                    }
+                    ObjectKind::WallOrFloor => {
+                        // do nothing
+                    }
+                    ObjectKind::Exhibit { .. } => {
+                        Self::render_object(
+                            object_idx,
+                            object,
+                            2.,
+                            &uniforms,
+                            &mut fx_pass_buffers,
+                            &self.render_settings,
+                            &fx_shader,
+                        );
+                    }
+                };
+            }
         }
 
         // Draw any debug lines requested by the game. This has gotta happen
@@ -403,7 +419,6 @@ impl Renderer {
         self.first_pass_image.clear(coloru8(0x00, 0x00, 0x00));
         self.depths.clear(f32::MAX);
         self.light_depths.clear(f32::MAX);
-        self.exhibits_stencil.clear(0.);
     }
 
     pub fn draw(
@@ -569,76 +584,71 @@ impl Add for RenderingResult {
 
 struct BaryCoords(Vec3);
 
-// So we can avoid passing around stencil values when not needed.
-trait FragOutput {
-    fn color(&self) -> Color;
-    fn stencil(&self) -> f32;
-}
-
-struct JustColor(Color);
-
-impl FragOutput for JustColor {
-    #[inline]
-    fn color(&self) -> Color {
-        self.0
-    }
-
-    #[inline]
-    fn stencil(&self) -> f32 {
-        0.
-    }
-}
-
-struct ColorStencil {
-    color: Color,
-    stencil: f32,
-}
-
-impl FragOutput for ColorStencil {
-    #[inline]
-    fn color(&self) -> Color {
-        self.color
-    }
-
-    #[inline]
-    fn stencil(&self) -> f32 {
-        self.stencil
-    }
-}
-
-impl FragOutput for () {
-    #[inline]
-    fn color(&self) -> Color {
-        coloru8(255, 255, 255)
-    }
-
-    #[inline]
-    fn stencil(&self) -> f32 {
-        0.
-    }
-}
-
 trait Shader {
     type Varying: Copy;
-    type F: FragOutput;
 
     fn vertex(&self, object_idx: usize, coord: Vec4, normal: Vec4) -> Self::Varying;
-    fn fragment(&self, object_idx: usize, varyings: &[Self::Varying; 3], b: BaryCoords) -> Self::F;
+    fn fragment(
+        &self,
+        x: usize,
+        y: usize,
+        object_idx: usize,
+        varyings: &[Self::Varying; 3],
+        b: BaryCoords,
+    ) -> Color;
 }
 
+struct PixelationShader<'buf> {
+    color_in: &'buf Image,
+    objects: &'buf Vec<Object>,
+}
+
+impl<'buf> Shader for PixelationShader<'buf> {
+    type Varying = ();
+
+    #[inline]
+    fn vertex(&self, _: usize, _coord: Vec4, _normal: Vec4) {}
+
+    #[inline]
+    fn fragment(
+        &self,
+        x: usize,
+        y: usize,
+        object_idx: usize,
+        _varyings: &[(); 3],
+        _b: BaryCoords,
+    ) -> Color {
+        match self.objects[object_idx].kind {
+            ObjectKind::Light | ObjectKind::WallOrFloor => {
+                panic!("unexpected object type")
+            }
+            ObjectKind::Exhibit { hiddenness } => {
+                let pixel_size = usize::max(1, (hiddenness * 5.).ceil() as usize);
+
+                let color = self
+                    .color_in
+                    .get(x - x % pixel_size, y - y % pixel_size)
+                    .xyz()
+                    .as_vec3();
+                colorvf(color)
+            }
+        }
+    }
+}
 struct NoopShaderColorsWhite {
     //
 }
 
 impl Shader for NoopShaderColorsWhite {
     type Varying = ();
-    type F = ();
 
     #[inline]
     fn vertex(&self, _: usize, _coord: Vec4, _normal: Vec4) {}
 
     #[inline]
-    fn fragment(&self, _: usize, _varyings: &[(); 3], _b: BaryCoords) {}
+    fn fragment(&self, _: usize, _: usize, _: usize, _varyings: &[(); 3], _b: BaryCoords) -> Color {
+        coloru8(255, 255, 255)
+    }
 }
 
 impl NoopShaderColorsWhite {
@@ -664,7 +674,6 @@ struct FinalRenderVarying {
 
 impl<'buf> Shader for MainRenderShader<'buf> {
     type Varying = FinalRenderVarying;
-    type F = ColorStencil;
 
     fn vertex(&self, _object_idx: usize, world_coord: Vec4, normal: Vec4) -> FinalRenderVarying {
         FinalRenderVarying {
@@ -675,10 +684,12 @@ impl<'buf> Shader for MainRenderShader<'buf> {
 
     fn fragment(
         &self,
+        _: usize,
+        _: usize,
         object_idx: usize,
         varyings: &[FinalRenderVarying; 3],
         b: BaryCoords,
-    ) -> ColorStencil {
+    ) -> Color {
         let constant_dir_light = vec4(0.1, -0.2, 0.3, 0.).normalize();
         let ambient_factor = 0.1;
         let dir_factor = 0.2;
@@ -752,22 +763,17 @@ impl<'buf> Shader for MainRenderShader<'buf> {
             + dir_intensity * dir_factor;
 
         let mut object_color = self.objects[object_idx].color.0;
-        let mut stencil = 0.0;
 
         match self.objects[object_idx].kind {
             ObjectKind::Exhibit { hiddenness } => {
                 object_color.z = hiddenness;
-                stencil = hiddenness;
             }
             _ => { // do nothing
             }
         }
 
         let color = object_color * total_intensity;
-        ColorStencil {
-            color: colorvf(color * 255.),
-            stencil,
-        }
+        colorvf(color * 255.)
     }
 }
 
@@ -803,8 +809,8 @@ where
     let mut answer = RenderingResult::new();
     answer.num_unclipped_triangles_considered += 1;
 
-    let width = buffers.depth.width();
-    let height = buffers.depth.height();
+    let width = buffers.width;
+    let height = buffers.height;
 
     let [a, b, c] = verts;
 
@@ -853,26 +859,42 @@ where
             // assert!(z >= 0.);
             // assert!(z <= 1.);
             answer.num_triangle_pixels_considered += 1;
-            if buffers.depth.is_valid(x, y) {
-                // if x >= 0 && x < width as i32 && y >= 0 && y < height as i32 {
-                answer.num_in_bounds_triangle_pixels_considered += 1;
-                let x = x as usize;
-                let y = y as usize;
-                if z < buffers.depth.get(x, y) {
-                    buffers.depth.set(x, y, z);
-                    answer.num_depth_buffer_sets += 1;
+            if let Some(depth) = &mut buffers.depth {
+                if depth.is_valid(x, y) {
+                    answer.num_in_bounds_triangle_pixels_considered += 1;
+                    let x = x as usize;
+                    let y = y as usize;
+                    if z < depth.get(x, y) {
+                        depth.set(x, y, z);
+                        answer.num_depth_buffer_sets += 1;
 
-                    let frag_output =
-                        shader.fragment(object_idx, varyings, BaryCoords(vec3(alpha, beta, gamma)));
+                        let frag_output = shader.fragment(
+                            x,
+                            y,
+                            object_idx,
+                            varyings,
+                            BaryCoords(vec3(alpha, beta, gamma)),
+                        );
 
-                    if let Some(image) = &mut buffers.color {
-                        image.set(x, y, frag_output.color());
-                        answer.num_pixels_drawn += 1
+                        if let Some(image) = &mut buffers.color {
+                            image.set(x, y, frag_output);
+                            answer.num_pixels_drawn += 1
+                        }
                     }
-
-                    if let Some(stencil) = &mut buffers.stencil {
-                        stencil.set(x, y, frag_output.stencil());
-                    }
+                }
+            } else {
+                let image = buffers.color.as_deref_mut().unwrap();
+                if image.is_valid(x, y) {
+                    let x = x as usize;
+                    let y = y as usize;
+                    let frag_output = shader.fragment(
+                        x,
+                        y,
+                        object_idx,
+                        varyings,
+                        BaryCoords(vec3(alpha, beta, gamma)),
+                    );
+                    image.set(x, y, frag_output);
                 }
             }
         }

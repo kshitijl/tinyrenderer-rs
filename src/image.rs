@@ -52,6 +52,9 @@ impl Image {
     pub fn buf(&self) -> &Vec<Color> {
         &self.buf
     }
+    pub fn buf_mut(&mut self) -> &mut Vec<Color> {
+        &mut self.buf
+    }
 
     #[inline]
     pub fn set(&mut self, x: usize, y: usize, color: Color) {
@@ -61,6 +64,7 @@ impl Image {
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub fn get(&self, x: usize, y: usize) -> Color {
         let y = self.height - y - 1;
         let idx = y * self.width + x;
