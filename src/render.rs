@@ -372,6 +372,8 @@ impl Renderer {
             let mut fx_pass_buffers = RasterArgs {
                 width: self.width,
                 height: self.width,
+                // We want special effects to respect depths of other items
+                // already on screen, but not necessarily occlude each other.
                 write_depth: false,
                 color: Some(&mut self.final_pass_image),
                 depth: &mut self.depths,
