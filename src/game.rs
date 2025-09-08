@@ -67,6 +67,7 @@ pub enum ObjectKind {
     Light,
     Exhibit { hiddenness: f32 },
     WallOrFloor,
+    Guard,
 }
 
 pub struct Object {
@@ -747,7 +748,7 @@ impl World {
                         object.angle_y += since_last_frame.as_secs_f32();
                     }
                 }
-                ObjectKind::Light | ObjectKind::WallOrFloor => {
+                ObjectKind::Light | ObjectKind::WallOrFloor | ObjectKind::Guard => {
                     // do nothing
                 }
             }

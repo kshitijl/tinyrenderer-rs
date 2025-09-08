@@ -329,15 +329,17 @@ impl Renderer {
                         &self.render_settings,
                         &noop_white_shader,
                     ),
-                    ObjectKind::Exhibit { .. } | ObjectKind::WallOrFloor => Self::render_object(
-                        object_idx,
-                        object,
-                        1.0,
-                        &uniforms,
-                        &mut main_pass_buffers,
-                        &self.render_settings,
-                        &main_render,
-                    ),
+                    ObjectKind::Exhibit { .. } | ObjectKind::Guard | ObjectKind::WallOrFloor => {
+                        Self::render_object(
+                            object_idx,
+                            object,
+                            1.0,
+                            &uniforms,
+                            &mut main_pass_buffers,
+                            &self.render_settings,
+                            &main_render,
+                        )
+                    }
                 };
 
                 answer = answer + render_result;
@@ -380,6 +382,9 @@ impl Renderer {
                     }
                     ObjectKind::WallOrFloor => {
                         // do nothing
+                    }
+                    ObjectKind::Guard => {
+                        // do nothing, but eventually put glow here
                     }
                     ObjectKind::Exhibit { .. } => {
                         Self::render_object(
@@ -618,9 +623,10 @@ impl<'buf> Shader for PixelationShader<'buf> {
         _varyings: &[(); 3],
         _b: BaryCoords,
     ) -> Color {
-        match self.objects[object_idx].kind {
-            ObjectKind::Light | ObjectKind::WallOrFloor => {
-                panic!("unexpected object type")
+        let kind = &self.objects[object_idx].kind;
+        match kind {
+            ObjectKind::Light | ObjectKind::WallOrFloor | ObjectKind::Guard => {
+                panic!("unexpected object type {:?}", kind)
             }
             ObjectKind::Exhibit { hiddenness } => {
                 let pixel_size = usize::max(1, (hiddenness * 5.).ceil() as usize);
