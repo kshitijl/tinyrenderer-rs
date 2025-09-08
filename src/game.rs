@@ -403,7 +403,7 @@ impl World {
 
         let mut guards = Vec::new();
         {
-            let guard_color = Colorf(vec3(0.8, 0.2, 0.6));
+            let guard_color = Colorf(vec3(0.8, 0.8, 0.8));
             let dirs = [
                 GridDir::XPlus,
                 GridDir::XMinus,
@@ -411,7 +411,9 @@ impl World {
                 GridDir::ZMinus,
             ];
             for _ in 0..args.num_guards {
-                let pos = level.grididx2world(level.floor_plan.random_empty(&mut rng));
+                let pos = level
+                    .grididx2world(level.floor_plan.random_empty(&mut rng))
+                    .with_y(-4.5);
 
                 let mut guard_mesh = Mesh::from_file(&args.guard_model).unwrap();
                 guard_mesh.normalize();
@@ -421,9 +423,9 @@ impl World {
                     pos,
                     angle_x: 0.,
                     angle_y: 0.,
-                    scale: 1.,
+                    scale: 2.6,
                     color: guard_color,
-                    kind: ObjectKind::Light,
+                    kind: ObjectKind::Guard,
                     visible: true,
                 });
 
