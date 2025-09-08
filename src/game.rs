@@ -810,28 +810,26 @@ impl World {
     }
 
     fn update_guards(&mut self, since_last_frame: Duration) {
-        let enter_alarm_state_points = self
-            .level
-            .floor_plan
-            .valid_neighbors_at_dist(self.player_grid_pos(), 2);
-
+        let alarm_enter_dist = 8.0;
+        let alarm_exit_dist = 12.;
         for guard in self.guards.iter_mut() {
             let guard_speed = 3.;
             let guard_obj = &mut self.objects[guard.idx.0];
-            let guard_grid_pos = self.level.world2grid(guard_obj.pos);
 
-            let guard_near_player = enter_alarm_state_points.contains(&guard_grid_pos);
-            match (guard.state, guard_near_player) {
-                (GuardState::Alarmed, true) => {
-                    // do nothing
+            let distance = (self.player.pos - guard_obj.pos).length();
+
+            match guard.state {
+                GuardState::Beat { facing: _ } if distance < alarm_enter_dist => {
+                    guard.state = GuardState::Alarmed
                 }
-                (GuardState::Alarmed, false) => {
+
+                GuardState::Alarmed if distance >= alarm_exit_dist => {
                     guard.state = GuardState::beat_facing_random(&mut self.rng)
                 }
-                (GuardState::Beat { facing: _ }, false) => {
+
+                _ => {
                     // do nothing
                 }
-                (GuardState::Beat { facing: _ }, true) => guard.state = GuardState::Alarmed,
             }
 
             match &mut guard.state {
