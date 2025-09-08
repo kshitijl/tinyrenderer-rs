@@ -364,7 +364,11 @@ impl Renderer {
                 m_projection: m_projection_objects,
                 m_view,
             };
-            let fx_shader = PixelationShader {
+            let pixel_fx_shader = PixelationShader {
+                color_in: &self.first_pass_image,
+                objects,
+            };
+            let glow_fx_shader = GlowShader {
                 color_in: &self.first_pass_image,
                 objects,
             };
@@ -390,7 +394,15 @@ impl Renderer {
                         // do nothing
                     }
                     ObjectKind::Guard => {
-                        // do nothing, but eventually put glow here
+                        Self::render_object(
+                            object_idx,
+                            object,
+                            1.05,
+                            &uniforms,
+                            &mut fx_pass_buffers,
+                            &self.render_settings,
+                            &glow_fx_shader,
+                        );
                     }
                     ObjectKind::Exhibit { .. } => {
                         Self::render_object(
@@ -400,7 +412,7 @@ impl Renderer {
                             &uniforms,
                             &mut fx_pass_buffers,
                             &self.render_settings,
-                            &fx_shader,
+                            &pixel_fx_shader,
                         );
                     }
                 };
@@ -647,6 +659,45 @@ impl<'buf> Shader for PixelationShader<'buf> {
         }
     }
 }
+
+const GLOW_WEIGHTS: [f32; 5] = [0.227027, 0.1945946, 0.1216216, 0.054054, 0.016216];
+
+struct GlowShader<'buf> {
+    color_in: &'buf Image,
+    objects: &'buf Vec<Object>,
+}
+
+impl<'buf> Shader for GlowShader<'buf> {
+    type Varying = ();
+
+    #[inline]
+    fn vertex(&self, _: usize, _coord: Vec4, _normal: Vec4) {}
+
+    #[inline]
+    fn fragment(
+        &self,
+        x: usize,
+        y: usize,
+        _object_idx: usize,
+        _varyings: &[(); 3],
+        _b: BaryCoords,
+    ) -> Color {
+        let mut result = self.color_in.get(x, y).as_vec4() * GLOW_WEIGHTS[0];
+        let d = 1i32;
+        let (x, y) = (x as i32, y as i32);
+        for i in 1..5 {
+            for (xx, yy) in [(x + d, y), (x - d, y), (x, y + d), (x, y - d)] {
+                if self.color_in.is_valid(xx, yy) {
+                    result += self.color_in.get(xx as usize, yy as usize).as_vec4()
+                        * GLOW_WEIGHTS[i]
+                        * 2.;
+                }
+            }
+        }
+
+        colorvf(result.xyz() / 2.)
+    }
+}
 struct NoopShaderColorsWhite {
     //
 }
@@ -770,7 +821,7 @@ impl<'buf> Shader for MainRenderShader<'buf> {
             }
         }
 
-        let total_intensity = 1. * ambient_factor
+        let mut total_intensity = 1. * ambient_factor
             + flashlight_intensity * flashlight_factor
             + dir_intensity * dir_factor;
 
@@ -779,6 +830,9 @@ impl<'buf> Shader for MainRenderShader<'buf> {
         match self.objects[object_idx].kind {
             ObjectKind::Exhibit { hiddenness } => {
                 object_color.z = hiddenness;
+            }
+            ObjectKind::Guard => {
+                total_intensity = 3. * total_intensity;
             }
             _ => { // do nothing
             }

@@ -6,6 +6,7 @@ use crate::render::*;
 use glam::{Mat3, Vec2, Vec3, vec2, vec3};
 use mazegen::{FloorPlan, GridElem, GridIdx};
 use rand;
+use rand::rngs::ThreadRng;
 use rand::seq::IndexedRandom;
 use std::collections::{HashMap, HashSet};
 use std::f32;
@@ -151,6 +152,18 @@ enum GridDir {
 }
 
 impl GridDir {
+    const ALL_DIRS: [GridDir; 4] = [
+        GridDir::XPlus,
+        GridDir::XMinus,
+        GridDir::ZPlus,
+        GridDir::ZMinus,
+    ];
+    fn all() -> &'static [GridDir; 4] {
+        &Self::ALL_DIRS
+    }
+}
+
+impl GridDir {
     fn flip(&self) -> Self {
         match *self {
             GridDir::XPlus => GridDir::XMinus,
@@ -168,11 +181,26 @@ impl GridDir {
         }
     }
     fn to_world_angle(&self) -> f32 {
-        match *self {
-            GridDir::XPlus => 90f32.to_radians(),
-            GridDir::XMinus => -90f32.to_radians(),
-            GridDir::ZPlus => 0.,
-            GridDir::ZMinus => 180f32.to_radians(),
+        0.
+        // match *self {
+        //     GridDir::XPlus => 90f32.to_radians(),
+        //     GridDir::XMinus => -90f32.to_radians(),
+        //     GridDir::ZPlus => 0.,
+        //     GridDir::ZMinus => 180f32.to_radians(),
+        // }
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+enum GuardState {
+    Alarmed,
+    Beat { facing: GridDir },
+}
+
+impl GuardState {
+    fn beat_facing_random(rng: &mut ThreadRng) -> Self {
+        Self::Beat {
+            facing: *GridDir::all().choose(rng).unwrap(),
         }
     }
 }
@@ -180,13 +208,12 @@ impl GridDir {
 #[derive(Debug)]
 struct Guard {
     idx: ObjectIdx,
-    facing: GridDir,
-    // state: Alarmed|Beat
-    // in alarmed state the blue and red glow comes
-    // otherwise white glow
-    // in alarmed state follow player, otherwise just execute beat
-    // sometimes change direction to a random direction in guard update
-    // gets alarmed if within 10 grid points of player or something
+    state: GuardState, // state: Alarmed|Beat
+                       // in alarmed state the blue and red glow comes
+                       // otherwise white glow
+                       // in alarmed state follow player, otherwise just execute beat
+                       // sometimes change direction to a random direction in guard update
+                       // gets alarmed if within 10 grid points of player or something
 }
 
 pub struct World {
@@ -210,6 +237,7 @@ pub struct World {
     pub first_pressed_this_frame: HashSet<KeyCode>,
 
     time_since_start: Duration,
+    rng: ThreadRng,
 }
 
 impl World {
@@ -403,13 +431,7 @@ impl World {
 
         let mut guards = Vec::new();
         {
-            let guard_color = Colorf(vec3(0.8, 0.8, 0.8));
-            let dirs = [
-                GridDir::XPlus,
-                GridDir::XMinus,
-                GridDir::ZPlus,
-                GridDir::ZMinus,
-            ];
+            let guard_color = Colorf(vec3(1.0, 1., 1.));
             for _ in 0..args.num_guards {
                 let pos = level
                     .grididx2world(level.floor_plan.random_empty(&mut rng))
@@ -431,7 +453,7 @@ impl World {
 
                 guards.push(Guard {
                     idx: ObjectIdx(objects.len() - 1),
-                    facing: *dirs.choose(&mut rng).unwrap(),
+                    state: GuardState::beat_facing_random(&mut rng),
                 });
             }
         }
@@ -484,6 +506,7 @@ impl World {
             },
             level,
             g2o,
+            rng,
         }
     }
 
@@ -571,6 +594,7 @@ impl World {
             // log::info!("movement was allowed. new loc is {}", desired_pos);
             self.player.pos = desired_pos;
         }
+        self.log_player_position();
 
         // log::info!(
         //     "now at grid {:?}, world {}",
@@ -594,9 +618,10 @@ impl World {
         let (x, y) = self.level.floor_plan.to_xy(p);
         let b = self.level.grid2world(x, y);
         log::info!(
-            "player at {}. on grid {:?}, back on world {}, aabb {:?}",
+            "player at {}. on grid {:?}, grid xy {:?}, back on world {}, aabb {:?}",
             a,
             p,
+            self.level.floor_plan.to_xy(p),
             b,
             self.level.aabb(p)
         );
@@ -785,21 +810,58 @@ impl World {
     }
 
     fn update_guards(&mut self, since_last_frame: Duration) {
-        let speed = 1.;
+        let enter_alarm_state_points = self
+            .level
+            .floor_plan
+            .valid_neighbors_at_dist(self.player_grid_pos(), 2);
+
         for guard in self.guards.iter_mut() {
+            let guard_speed = 3.;
             let guard_obj = &mut self.objects[guard.idx.0];
+            let guard_grid_pos = self.level.world2grid(guard_obj.pos);
 
-            let motion_dir = guard.facing.to_world_dir();
-            let desired_pos = guard_obj.pos + motion_dir * speed * since_last_frame.as_secs_f32();
-
-            let desired_grid_pos = self.level.world2grid(desired_pos);
-            if self.level.floor_plan.at(desired_grid_pos) != GridElem::Empty {
-                guard.facing = guard.facing.flip();
-            } else {
-                guard_obj.pos = desired_pos;
+            let guard_near_player = enter_alarm_state_points.contains(&guard_grid_pos);
+            match (guard.state, guard_near_player) {
+                (GuardState::Alarmed, true) => {
+                    // do nothing
+                }
+                (GuardState::Alarmed, false) => {
+                    guard.state = GuardState::beat_facing_random(&mut self.rng)
+                }
+                (GuardState::Beat { facing: _ }, false) => {
+                    // do nothing
+                }
+                (GuardState::Beat { facing: _ }, true) => guard.state = GuardState::Alarmed,
             }
 
-            guard_obj.angle_y = guard.facing.to_world_angle();
+            match &mut guard.state {
+                GuardState::Beat { facing } => {
+                    let motion_dir = facing.to_world_dir();
+                    let desired_pos =
+                        guard_obj.pos + motion_dir * guard_speed * since_last_frame.as_secs_f32();
+
+                    let desired_grid_pos = self.level.world2grid(desired_pos);
+                    if self.level.floor_plan.at(desired_grid_pos) != GridElem::Empty {
+                        *facing = facing.flip();
+                    } else {
+                        guard_obj.pos = desired_pos;
+                    }
+
+                    guard_obj.angle_y = facing.to_world_angle();
+                }
+
+                GuardState::Alarmed => {
+                    let motion_dir = (self.player.pos - guard_obj.pos).with_y(0.0).normalize();
+
+                    let desired_pos =
+                        guard_obj.pos + motion_dir * guard_speed * since_last_frame.as_secs_f32();
+
+                    guard_obj.pos = desired_pos;
+                    let d = motion_dir.dot(vec3(0., 0., 1.));
+                    let dor = motion_dir.x;
+                    guard_obj.angle_y = dor.signum() * d.acos();
+                }
+            }
         }
     }
 
