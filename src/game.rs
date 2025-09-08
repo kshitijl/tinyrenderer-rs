@@ -166,6 +166,14 @@ impl GridDir {
             GridDir::ZMinus => vec3(0., 0., -1.),
         }
     }
+    fn to_world_angle(&self) -> f32 {
+        match *self {
+            GridDir::XPlus => 90f32.to_radians(),
+            GridDir::XMinus => -90f32.to_radians(),
+            GridDir::ZPlus => 0.,
+            GridDir::ZMinus => 180f32.to_radians(),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -401,7 +409,7 @@ impl World {
                 GridDir::ZPlus,
                 GridDir::ZMinus,
             ];
-            for _ in 0..5 {
+            for _ in 0..args.num_guards {
                 let pos = level.grididx2world(level.floor_plan.random_empty(&mut rng));
 
                 let mut guard_mesh = Mesh::from_file(&args.guard_model).unwrap();
@@ -787,6 +795,8 @@ impl World {
             } else {
                 guard_obj.pos = desired_pos;
             }
+
+            guard_obj.angle_y = guard.facing.to_world_angle();
         }
     }
 

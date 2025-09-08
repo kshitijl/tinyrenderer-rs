@@ -189,6 +189,9 @@ struct Args {
     #[arg(short, long, default_value = "assets/man.obj")]
     guard_model: String,
 
+    #[arg(short, long, default_value = "10")]
+    num_guards: u32,
+
     #[arg(short, long)]
     wall_model_debug: Option<String>,
 
