@@ -45,11 +45,12 @@ enum ClippingPurpose {
     FirstPerson,
 }
 
-struct RenderBuffers<'a> {
+struct RasterArgs<'a> {
     width: usize,
     height: usize,
+    write_depth: bool,
     color: Option<&'a mut Image>,
-    depth: Option<&'a mut DepthBuffer>,
+    depth: &'a mut DepthBuffer,
 }
 
 impl Renderer {
@@ -78,7 +79,7 @@ impl Renderer {
         object: &Object,
         global_scale: f32,
         uniforms: &RenderingUniforms,
-        buffers: &mut RenderBuffers,
+        buffers: &mut RasterArgs,
         render_settings: &RenderSettings,
         shader: &S,
     ) -> RenderingResult
@@ -264,11 +265,12 @@ impl Renderer {
                 m_projection: m_projection_light,
                 m_view: m_light_view,
             };
-            let mut light_pov_render_buffers = RenderBuffers {
+            let mut light_pov_render_buffers = RasterArgs {
                 width: self.width,
                 height: self.width,
+                write_depth: true,
                 color: None,
-                depth: Some(&mut self.light_depths),
+                depth: &mut self.light_depths,
             };
             for (object_idx, object) in objects.iter().enumerate() {
                 if object.kind == ObjectKind::Light || !object.visible {
@@ -309,11 +311,12 @@ impl Renderer {
                 objects,
             );
 
-            let mut main_pass_buffers = RenderBuffers {
+            let mut main_pass_buffers = RasterArgs {
                 width: self.width,
                 height: self.width,
+                write_depth: true,
                 color: Some(&mut self.first_pass_image),
-                depth: Some(&mut self.depths),
+                depth: &mut self.depths,
             };
             for (object_idx, object) in objects.iter().enumerate() {
                 if !object.visible {
@@ -366,11 +369,12 @@ impl Renderer {
                 objects,
             };
 
-            let mut fx_pass_buffers = RenderBuffers {
+            let mut fx_pass_buffers = RasterArgs {
                 width: self.width,
                 height: self.width,
+                write_depth: false,
                 color: Some(&mut self.final_pass_image),
-                depth: None,
+                depth: &mut self.depths,
             };
             for (object_idx, object) in objects.iter().enumerate() {
                 if !object.visible {
@@ -806,7 +810,7 @@ fn triangle<S>(
     object_idx: usize,
     varyings: &[S::Varying; 3],
     shader: &S,
-    buffers: &mut RenderBuffers,
+    buffers: &mut RasterArgs,
     cull_backfaces: bool,
 ) -> RenderingResult
 where
@@ -865,34 +869,16 @@ where
             // assert!(z >= 0.);
             // assert!(z <= 1.);
             answer.num_triangle_pixels_considered += 1;
-            if let Some(depth) = &mut buffers.depth {
-                if depth.is_valid(x, y) {
-                    answer.num_in_bounds_triangle_pixels_considered += 1;
-                    let x = x as usize;
-                    let y = y as usize;
-                    if z < depth.get(x, y) {
-                        depth.set(x, y, z);
+            if buffers.depth.is_valid(x, y) {
+                answer.num_in_bounds_triangle_pixels_considered += 1;
+                let x = x as usize;
+                let y = y as usize;
+                if z < buffers.depth.get(x, y) {
+                    if buffers.write_depth {
+                        buffers.depth.set(x, y, z);
                         answer.num_depth_buffer_sets += 1;
-
-                        let frag_output = shader.fragment(
-                            x,
-                            y,
-                            object_idx,
-                            varyings,
-                            BaryCoords(vec3(alpha, beta, gamma)),
-                        );
-
-                        if let Some(image) = &mut buffers.color {
-                            image.set(x, y, frag_output);
-                            answer.num_pixels_drawn += 1
-                        }
                     }
-                }
-            } else {
-                let image = buffers.color.as_deref_mut().unwrap();
-                if image.is_valid(x, y) {
-                    let x = x as usize;
-                    let y = y as usize;
+
                     let frag_output = shader.fragment(
                         x,
                         y,
@@ -900,7 +886,11 @@ where
                         varyings,
                         BaryCoords(vec3(alpha, beta, gamma)),
                     );
-                    image.set(x, y, frag_output);
+
+                    if let Some(image) = &mut buffers.color {
+                        image.set(x, y, frag_output);
+                        answer.num_pixels_drawn += 1
+                    }
                 }
             }
         }
