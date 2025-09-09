@@ -5,9 +5,9 @@ use crate::mesh::Mesh;
 use crate::render::*;
 use glam::{Mat3, Vec2, Vec3, vec2, vec3};
 use mazegen::{FloorPlan, GridElem, GridIdx};
-use rand;
 use rand::rngs::ThreadRng;
 use rand::seq::IndexedRandom;
+use rand::{self, Rng};
 use std::collections::{HashMap, HashSet};
 use std::f32;
 use std::time::Duration;
@@ -161,9 +161,7 @@ impl GridDir {
     fn all() -> &'static [GridDir; 4] {
         &Self::ALL_DIRS
     }
-}
 
-impl GridDir {
     fn flip(&self) -> Self {
         match *self {
             GridDir::XPlus => GridDir::XMinus,
@@ -181,13 +179,16 @@ impl GridDir {
         }
     }
     fn to_world_angle(&self) -> f32 {
-        0.
-        // match *self {
-        //     GridDir::XPlus => 90f32.to_radians(),
-        //     GridDir::XMinus => -90f32.to_radians(),
-        //     GridDir::ZPlus => 0.,
-        //     GridDir::ZMinus => 180f32.to_radians(),
-        // }
+        match *self {
+            GridDir::XPlus => 90f32.to_radians(),
+            GridDir::XMinus => -90f32.to_radians(),
+            GridDir::ZPlus => 0.,
+            GridDir::ZMinus => 180f32.to_radians(),
+        }
+    }
+
+    fn random(rng: &mut ThreadRng) -> Self {
+        *Self::all().choose(rng).unwrap()
     }
 }
 
@@ -200,7 +201,7 @@ enum GuardState {
 impl GuardState {
     fn beat_facing_random(rng: &mut ThreadRng) -> Self {
         Self::Beat {
-            facing: *GridDir::all().choose(rng).unwrap(),
+            facing: GridDir::random(rng),
         }
     }
 }
@@ -843,6 +844,10 @@ impl World {
                         *facing = facing.flip();
                     } else {
                         guard_obj.pos = desired_pos;
+                    }
+
+                    if Rng::random_range(&mut self.rng, 0..300) == 0 {
+                        *facing = GridDir::random(&mut self.rng);
                     }
 
                     guard_obj.angle_y = facing.to_world_angle();

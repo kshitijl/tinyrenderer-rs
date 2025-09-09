@@ -22,3 +22,4 @@ winit = "0.30.12"
 [features]
 default = []
 debug-asserts = ["glam/glam-assert"]
+
