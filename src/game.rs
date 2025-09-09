@@ -39,6 +39,12 @@ pub struct Flashlight {
     pub dir: Vec3,
 }
 
+#[derive(Copy, Clone)]
+pub struct Spotlight {
+    pub pos: Vec3,
+    pub color: Colorf,
+}
+
 #[derive(Debug)]
 struct AABBXZ {
     min: Vec2,
@@ -164,6 +170,9 @@ enum ViewMode {
 #[derive(Debug)]
 struct ObjectIdx(usize);
 
+#[derive(Debug)]
+struct SpotlightIdx(usize);
+
 #[derive(Debug, Clone, Copy)]
 enum GridDir {
     XPlus,
@@ -230,6 +239,7 @@ impl GuardState {
 #[derive(Debug)]
 struct Guard {
     idx: ObjectIdx,
+    spotlight: SpotlightIdx,
     state: GuardState,
 }
 
@@ -243,6 +253,7 @@ pub struct World {
 
     light: Flashlight,
     light_object_idx: usize,
+    spotlights: Vec<Spotlight>,
 
     player: Player,
     guards: Vec<Guard>,
@@ -447,7 +458,10 @@ impl World {
         let light_object_idx = objects.len() - 1;
 
         let mut guards = Vec::new();
+        let mut spotlights = Vec::new();
+
         {
+            let guard_spotlight_color = vec3(0.2, 0.2, 0.2);
             let guard_color = Colorf(vec3(1.0, 1., 1.));
             for _ in 0..args.num_guards {
                 let pos = level
@@ -468,8 +482,14 @@ impl World {
                     visible: true,
                 });
 
+                spotlights.push(Spotlight {
+                    pos: pos,
+                    color: Colorf(guard_spotlight_color),
+                });
+
                 guards.push(Guard {
                     idx: ObjectIdx(objects.len() - 1),
+                    spotlight: SpotlightIdx(spotlights.len() - 1),
                     state: GuardState::beat_facing_random(&mut rng),
                 });
             }
@@ -516,6 +536,7 @@ impl World {
             first_pressed_this_frame: HashSet::new(),
             light,
             light_object_idx,
+            spotlights,
             time_since_start: Duration::from_secs(0),
             settings: Settings {
                 rotate_objects: false,
@@ -859,6 +880,8 @@ impl World {
                     guard_obj.angle_y = dor.signum() * d.acos();
                 }
             }
+
+            self.spotlights[guard.spotlight.0].pos = guard_obj.pos;
         }
     }
 
@@ -878,49 +901,58 @@ impl World {
         answer
     }
 
-    pub fn draw(&mut self, frame: &mut [u8]) -> RenderingResult {
-        if self.settings.draw_debug_lines {
-            let f = |v: Vec2| Vec3::new(v.x, -7., v.y);
-            for neighbor in self
-                .level
-                .floor_plan
-                .valid_neighbors_no_diagonals(self.level.world2grid(self.player.pos))
-                .iter()
-            {
-                let color = match self.level.floor_plan.at(*neighbor) {
-                    GridElem::Wall => GREY,
-                    GridElem::Empty => BLUE,
-                    GridElem::Exhibit => GOLD,
-                };
-                let aabb = self.level.aabb(*neighbor);
+    fn draw_debug_grid_lines(&mut self) {
+        let f = |v: Vec2| Vec3::new(v.x, -7., v.y);
+        for neighbor in self
+            .level
+            .floor_plan
+            .valid_neighbors_no_diagonals(self.level.world2grid(self.player.pos))
+            .iter()
+        {
+            let color = match self.level.floor_plan.at(*neighbor) {
+                GridElem::Wall => GREY,
+                GridElem::Empty => BLUE,
+                GridElem::Exhibit => GOLD,
+            };
+            let aabb = self.level.aabb(*neighbor);
 
-                let p1 = aabb.min;
-                let p2 = vec2(aabb.min.x, aabb.max.y);
-                let p3 = aabb.max;
-                let p4 = vec2(aabb.max.x, aabb.min.y);
+            let p1 = aabb.min;
+            let p2 = vec2(aabb.min.x, aabb.max.y);
+            let p3 = aabb.max;
+            let p4 = vec2(aabb.max.x, aabb.min.y);
 
-                for [a, b] in [
-                    [f(p1), f(p2)],
-                    [f(p2), f(p3)],
-                    [f(p3), f(p4)],
-                    [f(p4), f(p1)],
-                ] {
-                    self.renderer.debug_draw_line_in_world_space(a, b, color);
-                }
-
-                self.renderer
-                    .debug_draw_line_in_world_space(self.player.pos, f(p1), BLACK);
+            for [a, b] in [
+                [f(p1), f(p2)],
+                [f(p2), f(p3)],
+                [f(p3), f(p4)],
+                [f(p4), f(p1)],
+            ] {
+                self.renderer.debug_draw_line_in_world_space(a, b, color);
             }
 
-            let a = self.player.pos.with_y(-7.);
-            let p = self.level.world2grid(self.player.pos);
-            let (x, y) = self.level.floor_plan.to_xy(p);
-            let b = self.level.grid2world(x, y).with_y(-7.);
-            self.renderer.debug_draw_line_in_world_space(a, b, BLACK);
+            self.renderer
+                .debug_draw_line_in_world_space(self.player.pos, f(p1), BLACK);
         }
 
-        self.renderer
-            .draw(&self.light, &self.camera, &self.objects, frame)
+        let a = self.player.pos.with_y(-7.);
+        let p = self.level.world2grid(self.player.pos);
+        let (x, y) = self.level.floor_plan.to_xy(p);
+        let b = self.level.grid2world(x, y).with_y(-7.);
+        self.renderer.debug_draw_line_in_world_space(a, b, BLACK);
+    }
+
+    pub fn draw(&mut self, frame: &mut [u8]) -> RenderingResult {
+        if self.settings.draw_debug_lines {
+            self.draw_debug_grid_lines();
+        }
+
+        self.renderer.draw(
+            &self.light,
+            &self.spotlights,
+            &self.camera,
+            &self.objects,
+            frame,
+        )
     }
 }
 

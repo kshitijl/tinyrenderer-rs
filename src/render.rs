@@ -1,4 +1,4 @@
-use crate::game::{Camera, Flashlight, Object, ObjectKind};
+use crate::game::{Camera, Flashlight, Object, ObjectKind, Spotlight};
 use crate::image::*;
 
 use glam::{Mat4, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec3, vec4};
@@ -12,6 +12,13 @@ use self::shaderutils::*;
 
 #[derive(Copy, Clone)]
 pub struct Colorf(pub Vec3);
+
+impl Colorf {
+    #[allow(dead_code)]
+    fn to_color(&self) -> Color {
+        colorvf(self.0)
+    }
+}
 
 pub enum SplitScreenMode {
     Normal,
@@ -241,6 +248,7 @@ impl Renderer {
     fn render(
         &mut self,
         light: &Flashlight,
+        spotlights: &Vec<Spotlight>,
         camera: &Camera,
         objects: &Vec<Object>,
     ) -> RenderingResult {
@@ -309,6 +317,7 @@ impl Renderer {
                 light_uniforms.m_viewport,
                 &self.light_depths,
                 objects,
+                spotlights,
             );
 
             let mut main_pass_buffers = RasterArgs {
@@ -446,12 +455,13 @@ impl Renderer {
     pub fn draw(
         &mut self,
         light: &Flashlight,
+        spotlights: &Vec<Spotlight>,
         camera: &Camera,
         objects: &Vec<Object>,
         frame: &mut [u8],
     ) -> RenderingResult {
         self.clear();
-        let rendering_result = self.render(light, camera, objects);
+        let rendering_result = self.render(light, spotlights, camera, objects);
         self.debug_lines.clear();
 
         assert!(self.final_pass_image.width() == self.width);
@@ -723,6 +733,7 @@ struct MainRenderShader<'buf> {
     light_vp: Mat4,
     light_viewport: Mat4,
     light_pov_depths: &'buf DepthBuffer,
+    spotlights: &'buf Vec<Spotlight>,
 
     objects: &'buf Vec<Object>,
 }
@@ -825,6 +836,20 @@ impl<'buf> Shader for MainRenderShader<'buf> {
 
         let mut object_color = self.objects[object_idx].color.0;
 
+        for spotlight in self.spotlights {
+            let from_light_to_pixel = this_pixel_world_coords.xyz() - spotlight.pos;
+            let dist = from_light_to_pixel.length();
+            let dir = from_light_to_pixel.normalize();
+
+            let distance_factor = 1. - smoothstep(4., 5., dist);
+            let dir_factor = dir.dot(-this_pixel_normal.xyz()).clamp(0., 1.);
+
+            let this_light_factor = distance_factor * dir_factor;
+            let this_light_intensity = this_light_factor * spotlight.color.0;
+
+            total_intensity += this_light_intensity;
+        }
+
         match self.objects[object_idx].kind {
             ObjectKind::Exhibit { hiddenness } => {
                 object_color.z = hiddenness;
@@ -848,6 +873,7 @@ impl<'buf> MainRenderShader<'buf> {
         light_viewport: Mat4,
         light_pov_depths: &'buf DepthBuffer,
         objects: &'buf Vec<Object>,
+        spotlights: &'buf Vec<Spotlight>,
     ) -> Self {
         Self {
             flashlight: spotlight,
@@ -855,6 +881,7 @@ impl<'buf> MainRenderShader<'buf> {
             light_viewport,
             light_pov_depths,
             objects,
+            spotlights,
         }
     }
 }
