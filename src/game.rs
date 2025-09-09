@@ -539,6 +539,20 @@ impl World {
         };
 
         /*
+        Better collision detection & response.
+
+        For each nearby collider, figure out if desired pos is inside it.
+        If yes, find the normal from the collider to initial pos.
+        Also find how far inside the aabb the desired pos is.
+        Move the desired pos out along the normal by that dist.
+        Now the new desired pos should be outside the aabb of the collider.
+        Take this desired pos and continue with next collider.
+        At the end of this process we should be colliding with nothing.
+        Move player there.
+
+        */
+
+        /*
         Super dumb and simple collision detection.
 
         High level: prevent getting too close to walls, exhibits and guards,
