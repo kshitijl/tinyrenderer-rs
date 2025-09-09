@@ -2,6 +2,7 @@ use crate::Args;
 use crate::audio::{self, AudioSystem};
 use crate::image::{BLACK, BLUE, GOLD, GREY};
 use crate::mesh::Mesh;
+use crate::render::shaderutils::step;
 use crate::render::*;
 use glam::{Mat3, Vec2, Vec3, vec2, vec3};
 use mazegen::{FloorPlan, GridElem, GridIdx};
@@ -224,7 +225,7 @@ impl GridDir {
 
 #[derive(Debug, Copy, Clone)]
 enum GuardState {
-    Alarmed,
+    Alarmed { starting_at: Duration },
     Beat { facing: GridDir },
 }
 
@@ -267,6 +268,8 @@ pub struct World {
     time_since_start: Duration,
     rng: ThreadRng,
 }
+
+const GUARD_SPOTLIGHT_COLOR: Colorf = Colorf(vec3(0.2, 0.2, 0.2));
 
 impl World {
     pub fn new(args: &Args, audio: AudioSystem) -> Self {
@@ -461,7 +464,6 @@ impl World {
         let mut spotlights = Vec::new();
 
         {
-            let guard_spotlight_color = vec3(0.2, 0.2, 0.2);
             let guard_color = Colorf(vec3(1.0, 1., 1.));
             for _ in 0..args.num_guards {
                 let pos = level
@@ -484,7 +486,7 @@ impl World {
 
                 spotlights.push(Spotlight {
                     pos: pos,
-                    color: Colorf(guard_spotlight_color),
+                    color: GUARD_SPOTLIGHT_COLOR,
                 });
 
                 guards.push(Guard {
@@ -831,16 +833,20 @@ impl World {
         for guard in self.guards.iter_mut() {
             let guard_speed = 3.;
             let guard_obj = &mut self.objects[guard.idx.0];
+            let guard_spotlight = &mut self.spotlights[guard.spotlight.0];
 
             let distance = (self.player.pos - guard_obj.pos).length();
 
             match guard.state {
                 GuardState::Beat { facing: _ } if distance < alarm_enter_dist => {
-                    guard.state = GuardState::Alarmed
+                    guard.state = GuardState::Alarmed {
+                        starting_at: self.time_since_start,
+                    }
                 }
 
-                GuardState::Alarmed if distance >= alarm_exit_dist => {
-                    guard.state = GuardState::beat_facing_random(&mut self.rng)
+                GuardState::Alarmed { .. } if distance >= alarm_exit_dist => {
+                    guard.state = GuardState::beat_facing_random(&mut self.rng);
+                    guard_spotlight.color = GUARD_SPOTLIGHT_COLOR;
                 }
 
                 _ => {
@@ -868,7 +874,7 @@ impl World {
                     guard_obj.angle_y = facing.to_world_angle();
                 }
 
-                GuardState::Alarmed => {
+                GuardState::Alarmed { starting_at } => {
                     let motion_dir = (self.player.pos - guard_obj.pos).with_y(0.0).normalize();
 
                     let desired_pos =
@@ -878,10 +884,19 @@ impl World {
                     let d = motion_dir.dot(vec3(0., 0., 1.));
                     let dor = motion_dir.x;
                     guard_obj.angle_y = dor.signum() * d.acos();
+
+                    let alarmed_for = (self.time_since_start - *starting_at).as_secs_f32();
+                    let t = alarmed_for.fract();
+
+                    let red = f32::abs(f32::sin(t * f32::consts::PI * 2.) * (1. - step(0.5, t)));
+                    let blue = f32::abs(f32::sin((t - 0.5) * f32::consts::PI * 2.) * step(0.5, t));
+
+                    guard_spotlight.color = Colorf(vec3(red, 0., blue));
+                    // guard_spotlight.color = alarmed_for.sin() x
                 }
             }
 
-            self.spotlights[guard.spotlight.0].pos = guard_obj.pos;
+            guard_spotlight.pos = guard_obj.pos;
         }
     }
 

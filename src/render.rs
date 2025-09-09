@@ -6,7 +6,7 @@ use std::f32;
 use std::ops::Add;
 
 mod line;
-mod shaderutils;
+pub mod shaderutils;
 
 use self::shaderutils::*;
 
