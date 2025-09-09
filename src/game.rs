@@ -34,7 +34,7 @@ pub struct Camera {
 }
 
 #[derive(Copy, Clone)]
-pub struct Spotlight {
+pub struct Flashlight {
     pub pos: Vec3,
     pub dir: Vec3,
 }
@@ -241,7 +241,7 @@ pub struct World {
     camera: Camera,
     vm: ViewMode,
 
-    light: Spotlight,
+    light: Flashlight,
     light_object_idx: usize,
 
     player: Player,
@@ -491,7 +491,7 @@ impl World {
 
         let camera_dir = Vec3::ZERO;
 
-        let light = Spotlight {
+        let light = Flashlight {
             pos: player.pos,
             dir: camera_dir,
         };

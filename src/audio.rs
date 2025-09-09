@@ -15,6 +15,7 @@ pub struct AudioSystem {
 pub enum Track {
     Xpansive,
     Bear,
+    #[allow(dead_code)]
     YouLost,
     Bassline,
 }

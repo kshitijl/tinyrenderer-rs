@@ -1,4 +1,4 @@
-use crate::game::{Camera, Object, ObjectKind, Spotlight};
+use crate::game::{Camera, Flashlight, Object, ObjectKind};
 use crate::image::*;
 
 use glam::{Mat4, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec3, vec4};
@@ -240,7 +240,7 @@ impl Renderer {
 
     fn render(
         &mut self,
-        light: &Spotlight,
+        light: &Flashlight,
         camera: &Camera,
         objects: &Vec<Object>,
     ) -> RenderingResult {
@@ -370,7 +370,6 @@ impl Renderer {
             };
             let glow_fx_shader = GlowShader {
                 color_in: &self.first_pass_image,
-                objects,
             };
 
             let mut fx_pass_buffers = RasterArgs {
@@ -446,7 +445,7 @@ impl Renderer {
 
     pub fn draw(
         &mut self,
-        light: &Spotlight,
+        light: &Flashlight,
         camera: &Camera,
         objects: &Vec<Object>,
         frame: &mut [u8],
@@ -664,7 +663,6 @@ const GLOW_WEIGHTS: [f32; 5] = [0.227027, 0.1945946, 0.1216216, 0.054054, 0.0162
 
 struct GlowShader<'buf> {
     color_in: &'buf Image,
-    objects: &'buf Vec<Object>,
 }
 
 impl<'buf> Shader for GlowShader<'buf> {
@@ -721,7 +719,7 @@ impl NoopShaderColorsWhite {
 }
 
 struct MainRenderShader<'buf> {
-    spotlight: Spotlight,
+    flashlight: Flashlight,
     light_vp: Mat4,
     light_viewport: Mat4,
     light_pov_depths: &'buf DepthBuffer,
@@ -756,7 +754,7 @@ impl<'buf> Shader for MainRenderShader<'buf> {
         let constant_dir_light = vec4(0.1, -0.2, 0.3, 0.).normalize();
         let ambient_factor = 0.1;
         let dir_factor = 0.2;
-        let flashlight_factor = 0.7;
+        let overall_flashlight_factor = 0.7;
 
         let (alpha, beta, gamma) = (b.0.x, b.0.y, b.0.z);
         let (na, nb, nc) = (varyings[0].normal, varyings[1].normal, varyings[2].normal);
@@ -771,7 +769,7 @@ impl<'buf> Shader for MainRenderShader<'buf> {
 
         let this_pixel_world_coords = alpha * wa + beta * wb + gamma * wc;
 
-        let light_to_pixel = this_pixel_world_coords - Vec4::from((self.spotlight.pos, 1.));
+        let light_to_pixel = this_pixel_world_coords - Vec4::from((self.flashlight.pos, 1.));
         let light_to_pixel_distance = light_to_pixel.length();
         let light_to_pixel_normalized = light_to_pixel / light_to_pixel_distance;
 
@@ -780,7 +778,7 @@ impl<'buf> Shader for MainRenderShader<'buf> {
         }
         assert_normalized(light_to_pixel_normalized);
         // light_dir is in the world coordinates, so we don't need to transform it.
-        let light_dir = Vec4::from((self.spotlight.dir, 0.)).normalize();
+        let light_dir = Vec4::from((self.flashlight.dir, 0.)).normalize();
         assert_normalized(light_dir);
 
         let spotlight_factor = light_to_pixel_normalized.dot(light_dir);
@@ -822,7 +820,7 @@ impl<'buf> Shader for MainRenderShader<'buf> {
         }
 
         let mut total_intensity = 1. * ambient_factor
-            + flashlight_intensity * flashlight_factor
+            + flashlight_intensity * overall_flashlight_factor
             + dir_intensity * dir_factor;
 
         let mut object_color = self.objects[object_idx].color.0;
@@ -845,14 +843,14 @@ impl<'buf> Shader for MainRenderShader<'buf> {
 
 impl<'buf> MainRenderShader<'buf> {
     fn new(
-        spotlight: Spotlight,
+        spotlight: Flashlight,
         light_vp: Mat4,
         light_viewport: Mat4,
         light_pov_depths: &'buf DepthBuffer,
         objects: &'buf Vec<Object>,
     ) -> Self {
         Self {
-            spotlight,
+            flashlight: spotlight,
             light_vp,
             light_viewport,
             light_pov_depths,
