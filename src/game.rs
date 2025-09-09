@@ -46,13 +46,34 @@ struct AABBXZ {
 }
 
 impl AABBXZ {
-    // Returns 0 is point is inside the box.
+    // Returns 0 if point is inside the box.
     fn distance(&self, v: Vec3) -> f32 {
         let (x1, y1, x2, y2) = (self.min.x, self.min.y, self.max.x, self.max.y);
         let closest_x = v.x.clamp(x1, x2);
         let closest_yz = v.z.clamp(y1, y2);
 
         vec2(v.x - closest_x, v.z - closest_yz).length()
+    }
+
+    fn normal(&self, towards: &Vec3) -> Vec3 {
+        // TODO figure out what to do when [towards] is inside the AABB
+        if towards.x < self.min.x {
+            vec3(-1., 0., 0.)
+        } else if towards.x > self.max.x {
+            vec3(1., 0., 0.)
+        } else if towards.z < self.min.y {
+            vec3(0., 0., -1.)
+        } else if towards.z > self.max.y {
+            vec3(0., 0., 1.)
+        } else {
+            // lol
+            let center = vec3(
+                (self.min.x + self.max.x) / 2.,
+                towards.y,
+                (self.min.y + self.max.y) / 2.,
+            );
+            towards - center
+        }
     }
 }
 
@@ -209,12 +230,7 @@ impl GuardState {
 #[derive(Debug)]
 struct Guard {
     idx: ObjectIdx,
-    state: GuardState, // state: Alarmed|Beat
-                       // in alarmed state the blue and red glow comes
-                       // otherwise white glow
-                       // in alarmed state follow player, otherwise just execute beat
-                       // sometimes change direction to a random direction in guard update
-                       // gets alarmed if within 10 grid points of player or something
+    state: GuardState,
 }
 
 pub struct World {
@@ -528,9 +544,6 @@ impl World {
         let forward = self.camera.dir.with_y(0.).normalize();
         let right = forward.cross(self.camera.up);
 
-        // let forward = vec3(0., 0., -1.);
-        // let right = vec3(1., 0., 0.);
-
         let desired_pos = match dir {
             Direction::Forward => self.player.pos + forward * speed,
             Direction::Back => self.player.pos - forward * speed,
@@ -539,7 +552,8 @@ impl World {
         };
 
         /*
-        Better collision detection & response.
+        Simple collision detection & response that makes player slide along
+        walls.
 
         For each nearby collider, figure out if desired pos is inside it.
         If yes, find the normal from the collider to initial pos.
@@ -549,40 +563,13 @@ impl World {
         Take this desired pos and continue with next collider.
         At the end of this process we should be colliding with nothing.
         Move player there.
-
         */
 
-        /*
-        Super dumb and simple collision detection.
-
-        High level: prevent getting too close to walls, exhibits and guards,
-        where "too close" is defined by some epsilon.
-
-        Medium level: find the distance between the desired position and each
-        possible collider. If any distance is below epsilon, reject motion.
-
-        TODO what if guards trap the player lol?
-        TODO allow motion all the way up to the boundary but not beyond
-
-        Details:
-         - iterate over possible colliders: nearby walls and exhibits; all guards
-         - get their AABB in the X-Z plane
-         - find the distance from desired pos to each AABB
-         - if any distance < epsilon then reject motion
-        */
         let eps = 0.1;
+        let current_world_pos = self.player.pos;
+        let current_grid_pos = self.player_grid_pos();
+        let mut final_pos = desired_pos;
 
-        // log::info!(
-        //     "current: {}. desired: {}. current grid loc: {}. desired grid loc: {}",
-        //     self.player.pos,
-        //     desired_pos,
-        //     self.level.world2grid(self.player.pos),
-        //     self.level.world2grid(desired_pos)
-        // );
-
-        let mut current_min_distance = f32::MAX;
-        let mut desired_min_distance = f32::MAX;
-        let current_grid_pos = self.level.world2grid(self.player.pos);
         for neighbor in self
             .level
             .floor_plan
@@ -591,31 +578,24 @@ impl World {
             match self.level.floor_plan.at(neighbor) {
                 GridElem::Wall | GridElem::Exhibit => {
                     let aabb = self.level.aabb(neighbor);
-                    let desired_distance = aabb.distance(desired_pos);
-                    let current_distance = aabb.distance(self.player.pos);
+                    let desired_distance = aabb.distance(final_pos);
 
-                    current_min_distance = f32::min(current_distance, current_min_distance);
-                    desired_min_distance = f32::min(desired_distance, desired_min_distance);
+                    if desired_distance <= eps {
+                        let normal = aabb.normal(&current_world_pos);
+
+                        // TODO replace this loop with a single calculation to
+                        // how deep inside we are
+                        while aabb.distance(final_pos) <= eps {
+                            final_pos += eps * normal;
+                        }
+                    }
                 }
                 GridElem::Empty => {
                     // do nothing, always allow
                 }
             }
         }
-
-        if desired_min_distance < eps && desired_min_distance < current_min_distance {
-            // do not allow
-        } else {
-            // log::info!("movement was allowed. new loc is {}", desired_pos);
-            self.player.pos = desired_pos;
-        }
-        self.log_player_position();
-
-        // log::info!(
-        //     "now at grid {:?}, world {}",
-        //     self.level.world2grid(self.player.pos),
-        //     self.player.pos
-        // );
+        self.player.pos = final_pos;
     }
 
     fn is_key_down(&self, key: KeyCode) -> bool {
