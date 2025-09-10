@@ -244,6 +244,12 @@ struct Guard {
     state: GuardState,
 }
 
+#[derive(Debug)]
+struct Score {
+    health: u32,
+    remaining_objects: u32,
+}
+
 pub struct World {
     renderer: Renderer,
     audio: AudioSystem,
@@ -257,6 +263,7 @@ pub struct World {
     spotlights: Vec<Spotlight>,
 
     player: Player,
+    score: Score,
     guards: Vec<Guard>,
     objects: Vec<Object>,
     level: Level,
@@ -368,6 +375,7 @@ impl World {
         let mut exhibit_models = args.exhibit_models.iter().cycle();
 
         let mut g2o = HashMap::new();
+        let mut num_exhibits = 0;
 
         for x in 0..level.floor_plan.width() {
             for y in 0..level.floor_plan.height() {
@@ -423,12 +431,7 @@ impl World {
                         assert!(level.world2grid(pos) == level.floor_plan.xy2grid(x, y));
                         assert!(level.floor_plan.grid2xy(level.world2grid(pos)) == (x, y));
 
-                        log::info!(
-                            "instantiating exhibit at {:?}, world {}, aabb {:?}",
-                            (x, y),
-                            pos,
-                            level.aabb(level.floor_plan.xy2grid(x, y))
-                        );
+                        num_exhibits += 1;
                         objects.push(Object {
                             mesh: model,
                             pos,
@@ -525,6 +528,10 @@ impl World {
             audio,
             objects,
             player,
+            score: Score {
+                health: 100,
+                remaining_objects: num_exhibits,
+            },
             guards,
             vm: ViewMode::Topdown,
             camera: Camera {
@@ -660,8 +667,14 @@ impl World {
                 let object = &mut self.objects[object_idx.0];
                 match object.kind {
                     ObjectKind::Exhibit { ref mut hiddenness } => {
+                        let was_hidden = *hiddenness > 0.;
                         *hiddenness =
                             (*hiddenness - since_last_frame.as_secs_f32() / 2.0).clamp(0., 1.);
+                        let now_hidden = *hiddenness > 0.;
+
+                        if now_hidden && !was_hidden {
+                            self.score.remaining_objects -= 1;
+                        }
                     }
 
                     _ => {
@@ -754,6 +767,7 @@ impl World {
         }
         if self.was_key_pressed(KeyCode::Digit6) {
             self.settings.draw_debug_lines = !self.settings.draw_debug_lines;
+            log::info!("score {:?}", self.score);
         }
 
         self.first_pressed_this_frame.clear();
@@ -828,12 +842,17 @@ impl World {
     fn update_guards(&mut self, since_last_frame: Duration) {
         let alarm_enter_dist = 8.0;
         let alarm_exit_dist = 12.;
+        let injury_distance = 1.;
+
         for guard in self.guards.iter_mut() {
             let guard_speed = 3.;
             let guard_obj = &mut self.objects[guard.idx.0];
             let guard_spotlight = &mut self.spotlights[guard.spotlight.0];
 
             let distance = (self.player.pos - guard_obj.pos).length();
+            if distance < injury_distance {
+                self.score.health -= 1;
+            }
 
             match guard.state {
                 GuardState::Beat { facing: _ } if distance < alarm_enter_dist => {
