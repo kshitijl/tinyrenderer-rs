@@ -15,7 +15,7 @@ pub struct Colorf(pub Vec3);
 
 impl Colorf {
     #[allow(dead_code)]
-    fn to_color(&self) -> Color {
+    fn to_color(self) -> Color {
         colorvf(self.0)
     }
 }
@@ -164,11 +164,7 @@ impl Renderer {
 
                     shader.vertex(object_idx, world_coords[i], normal)
                 });
-                let cull_backfaces = if object.kind == ObjectKind::WallOrFloor {
-                    false
-                } else {
-                    true
-                };
+                let cull_backfaces = object.kind != ObjectKind::WallOrFloor;
 
                 let triangle_result = triangle(
                     &screen_coords,
@@ -693,12 +689,10 @@ impl<'buf> Shader for GlowShader<'buf> {
         let mut result = self.color_in.get(x, y).as_vec4() * GLOW_WEIGHTS[0];
         let d = 1i32;
         let (x, y) = (x as i32, y as i32);
-        for i in 1..5 {
+        for weight in GLOW_WEIGHTS.iter().skip(1) {
             for (xx, yy) in [(x + d, y), (x - d, y), (x, y + d), (x, y - d)] {
                 if self.color_in.is_valid(xx, yy) {
-                    result += self.color_in.get(xx as usize, yy as usize).as_vec4()
-                        * GLOW_WEIGHTS[i]
-                        * 2.;
+                    result += self.color_in.get(xx as usize, yy as usize).as_vec4() * weight * 2.;
                 }
             }
         }

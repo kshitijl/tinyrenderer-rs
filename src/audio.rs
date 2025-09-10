@@ -85,11 +85,6 @@ impl AudioSystem {
                 let t = 8000. * state.sample_clock / sample_rate;
                 let t = t as u32;
 
-                // let expr = t * (42 & t >> 10);
-                // let expr = t*((t&4096?6:16)+(1&t>>14))>>(3&t>>8)|t>>(t&4096?3:4);
-                // let expr = t*((t&4096?6:16)+(1&t>>14))>>(3&t>>8)|t>>(t&4096?3:4);
-                // let expr = (t * 5 & t >> 7) | (t * 3 & t >> 10);
-
                 let expr = match state.track {
                     Track::Xpansive => (t >> 7 | t | t >> 6) * 10 + 4 * (t & t >> 13 | t >> 6),
                     Track::YouLost => {
@@ -106,7 +101,7 @@ impl AudioSystem {
                     }
                     Track::Bear => {
                         let c = if t % 16 != 0 { 2 } else { 6 };
-                        t + (t & t ^ t >> 6) - t * ((t >> 9) & (c) & t >> 9)
+                        t + (t & (t ^ (t >> 6))) - t * ((t >> 9) & (c) & t >> 9)
                     }
                 };
                 let expr_char = expr as u8;

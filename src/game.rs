@@ -47,12 +47,12 @@ pub struct Spotlight {
 }
 
 #[derive(Debug)]
-struct AABBXZ {
+struct Aabbxz {
     min: Vec2,
     max: Vec2,
 }
 
-impl AABBXZ {
+impl Aabbxz {
     // Returns 0 if point is inside the box.
     fn distance(&self, v: Vec3) -> f32 {
         let (x1, y1, x2, y2) = (self.min.x, self.min.y, self.max.x, self.max.y);
@@ -124,7 +124,7 @@ impl Level {
     }
 
     fn grididx2world(&self, g: GridIdx) -> Vec3 {
-        let (x, y) = self.floor_plan.to_xy(g);
+        let (x, y) = self.floor_plan.grid2xy(g);
         self.grid2world(x, y)
     }
 
@@ -140,12 +140,12 @@ impl Level {
         let x = (v.x / self.grid_size).round();
         let y = (v.z / self.grid_size).round();
 
-        self.floor_plan.from_xy(x as u32, y as u32)
+        self.floor_plan.xy2grid(x as u32, y as u32)
     }
 
-    fn aabb(&self, g: GridIdx) -> AABBXZ {
-        let (x, y) = self.floor_plan.to_xy(g);
-        AABBXZ {
+    fn aabb(&self, g: GridIdx) -> Aabbxz {
+        let (x, y) = self.floor_plan.grid2xy(g);
+        Aabbxz {
             min: vec2(
                 (x as f32 - 0.5) * self.grid_size,
                 (y as f32 - 0.5) * self.grid_size,
@@ -193,24 +193,24 @@ impl GridDir {
         &Self::ALL_DIRS
     }
 
-    fn flip(&self) -> Self {
-        match *self {
+    fn flip(self) -> Self {
+        match self {
             GridDir::XPlus => GridDir::XMinus,
             GridDir::XMinus => GridDir::XPlus,
             GridDir::ZPlus => GridDir::ZMinus,
             GridDir::ZMinus => GridDir::ZPlus,
         }
     }
-    fn to_world_dir(&self) -> Vec3 {
-        match *self {
+    fn to_world_dir(self) -> Vec3 {
+        match self {
             GridDir::XPlus => vec3(1., 0., 0.),
             GridDir::XMinus => vec3(-1., 0., 0.),
             GridDir::ZPlus => vec3(0., 0., 1.),
             GridDir::ZMinus => vec3(0., 0., -1.),
         }
     }
-    fn to_world_angle(&self) -> f32 {
-        match *self {
+    fn to_world_angle(self) -> f32 {
+        match self {
             GridDir::XPlus => 90f32.to_radians(),
             GridDir::XMinus => -90f32.to_radians(),
             GridDir::ZPlus => 0.,
@@ -295,7 +295,7 @@ impl World {
 
         g.print();
 
-        let theme_colors = vec![
+        let theme_colors = [
             chex(0xea369e),
             chex(0xea3e7a),
             chex(0xfdf952),
@@ -373,7 +373,7 @@ impl World {
             for y in 0..level.floor_plan.height() {
                 let angle_x = 0.;
                 let y_offset = 0.;
-                let g = level.floor_plan.from_xy(x, y);
+                let g = level.floor_plan.xy2grid(x, y);
                 if (y * level.floor_plan.width() + x) % 100 == 0 {
                     wall_color = theme_colors.choose(&mut rng).unwrap();
                 }
@@ -397,7 +397,7 @@ impl World {
                                             visible: true,
                                         });
                                     } else {
-                                        let (nx, ny) = level.floor_plan.to_xy(neighbor);
+                                        let (nx, ny) = level.floor_plan.grid2xy(neighbor);
                                         objects.push(make_wall(
                                             x,
                                             y,
@@ -420,14 +420,14 @@ impl World {
 
                         let color = *theme_colors.choose(&mut rng).unwrap();
                         let pos = level.grid2world(x, y) + vec3(0., y_offset, 0.);
-                        assert!(level.world2grid(pos) == level.floor_plan.from_xy(x, y));
-                        assert!(level.floor_plan.to_xy(level.world2grid(pos)) == (x, y));
+                        assert!(level.world2grid(pos) == level.floor_plan.xy2grid(x, y));
+                        assert!(level.floor_plan.grid2xy(level.world2grid(pos)) == (x, y));
 
                         log::info!(
                             "instantiating exhibit at {:?}, world {}, aabb {:?}",
                             (x, y),
                             pos,
-                            level.aabb(level.floor_plan.from_xy(x, y))
+                            level.aabb(level.floor_plan.xy2grid(x, y))
                         );
                         objects.push(Object {
                             mesh: model,
@@ -439,7 +439,7 @@ impl World {
                             kind: ObjectKind::Exhibit { hiddenness: 1.0 },
                             visible: true,
                         });
-                        g2o.insert(level.floor_plan.from_xy(x, y), ObjectIdx(objects.len() - 1));
+                        g2o.insert(level.floor_plan.xy2grid(x, y), ObjectIdx(objects.len() - 1));
                         exhibit_idx = objects.len() - 1;
 
                         objects.push(make_floor(x, y));
@@ -485,7 +485,7 @@ impl World {
                 });
 
                 spotlights.push(Spotlight {
-                    pos: pos,
+                    pos,
                     color: GUARD_SPOTLIGHT_COLOR,
                 });
 
@@ -497,7 +497,7 @@ impl World {
             }
         }
 
-        let (x_empty, y_empty) = level.floor_plan.to_xy(level.floor_plan.first_empty());
+        let (x_empty, y_empty) = level.floor_plan.grid2xy(level.floor_plan.first_empty());
 
         let player = Player {
             pos: level.grid2world(x_empty, y_empty) + vec3(0.2, 0.4, 0.2),
@@ -508,7 +508,7 @@ impl World {
         log::info!(
             "initial player position in world is {}, in grid is {:?}",
             player.pos,
-            level.floor_plan.to_xy(level.world2grid(player.pos))
+            level.floor_plan.grid2xy(level.world2grid(player.pos))
         );
 
         let camera_dir = Vec3::ZERO;
@@ -633,13 +633,13 @@ impl World {
     fn log_player_position(&self) {
         let a = self.player.pos;
         let p = self.level.world2grid(self.player.pos);
-        let (x, y) = self.level.floor_plan.to_xy(p);
+        let (x, y) = self.level.floor_plan.grid2xy(p);
         let b = self.level.grid2world(x, y);
         log::info!(
             "player at {}. on grid {:?}, grid xy {:?}, back on world {}, aabb {:?}",
             a,
             p,
-            self.level.floor_plan.to_xy(p),
+            self.level.floor_plan.grid2xy(p),
             b,
             self.level.aabb(p)
         );
@@ -728,10 +728,8 @@ impl World {
                 }
             }
             self.examine_nearby_exhibits(since_last_frame);
-        } else {
-            if self.vm != ViewMode::Topdown {
-                self.switch_view_mode()
-            }
+        } else if self.vm != ViewMode::Topdown {
+            self.switch_view_mode()
         }
         if self.was_key_pressed(KeyCode::Digit4) {
             self.settings.rotate_objects = !self.settings.rotate_objects;
@@ -951,7 +949,7 @@ impl World {
 
         let a = self.player.pos.with_y(-7.);
         let p = self.level.world2grid(self.player.pos);
-        let (x, y) = self.level.floor_plan.to_xy(p);
+        let (x, y) = self.level.floor_plan.grid2xy(p);
         let b = self.level.grid2world(x, y).with_y(-7.);
         self.renderer.debug_draw_line_in_world_space(a, b, BLACK);
     }
@@ -993,12 +991,12 @@ wwwwwwwww"#,
 
         assert_eq!(g.width(), 9);
         assert_eq!(g.height(), 10);
-        assert_eq!(g.first_empty(), g.from_xy(1, 1));
+        assert_eq!(g.first_empty(), g.xy2grid(1, 1));
     }
 
     #[test]
     fn it_computes_aabb_distances() {
-        let aabb = AABBXZ {
+        let aabb = Aabbxz {
             min: vec2(1.0, 1.0),
             max: vec2(3.0, 3.0),
         };

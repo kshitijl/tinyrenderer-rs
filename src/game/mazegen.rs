@@ -28,26 +28,26 @@ impl FloorPlan {
     }
 
     #[inline]
-    pub fn to_xy(&self, g: GridIdx) -> (u32, u32) {
+    pub fn grid2xy(&self, g: GridIdx) -> (u32, u32) {
         let x = g.0 % self.width();
         let y = g.0 / self.width();
         (x, y)
     }
 
     #[inline]
-    pub fn from_xy(&self, x: u32, y: u32) -> GridIdx {
+    pub fn xy2grid(&self, x: u32, y: u32) -> GridIdx {
         GridIdx(y * self.width() + x)
     }
 
     #[inline]
     pub fn valid_neighbors_no_diagonals(&self, g: GridIdx) -> SmallVec<[GridIdx; 4]> {
         let mut answer = SmallVec::new();
-        let (x, y) = self.to_xy(g);
+        let (x, y) = self.grid2xy(g);
 
         for (dx, dy) in [(0, 1), (0, -1), (1, 0), (-1, 0)] {
             let (neighbor_x, neighbor_y) = (x as i32 + dx, y as i32 + dy);
             if self.is_valid(neighbor_x, neighbor_y) {
-                answer.push(self.from_xy(neighbor_x as u32, neighbor_y as u32));
+                answer.push(self.xy2grid(neighbor_x as u32, neighbor_y as u32));
             }
         }
 
@@ -57,7 +57,7 @@ impl FloorPlan {
     #[inline]
     pub fn valid_neighbors_at_dist(&self, g: GridIdx, dist: i32) -> SmallVec<[GridIdx; 4]> {
         let mut answer = SmallVec::new();
-        let (x, y) = self.to_xy(g);
+        let (x, y) = self.grid2xy(g);
 
         for dx in -dist..=dist {
             for dy in -dist..=dist {
@@ -66,7 +66,7 @@ impl FloorPlan {
                 }
                 let (neighbor_x, neighbor_y) = (x as i32 + dx, y as i32 + dy);
                 if self.is_valid(neighbor_x, neighbor_y) {
-                    answer.push(self.from_xy(neighbor_x as u32, neighbor_y as u32));
+                    answer.push(self.xy2grid(neighbor_x as u32, neighbor_y as u32));
                 }
             }
         }
@@ -108,7 +108,7 @@ impl FloorPlan {
             let x = rng.random_range(0..self.width);
             let y = rng.random_range(0..self.height);
 
-            let g = self.from_xy(x, y);
+            let g = self.xy2grid(x, y);
 
             if self.at(g) == GridElem::Empty {
                 return g;
@@ -117,7 +117,7 @@ impl FloorPlan {
     }
 
     pub fn all_cells(&self) -> impl Iterator<Item = GridIdx> {
-        (0..self.height).flat_map(move |y| (0..self.width).map(move |x| self.from_xy(x, y)))
+        (0..self.height).flat_map(move |y| (0..self.width).map(move |x| self.xy2grid(x, y)))
     }
 
     pub fn cells_of_kind(&self, k: GridElem) -> impl Iterator<Item = GridIdx> {
@@ -172,7 +172,7 @@ impl FloorPlan {
         x2: i32,
         y2: i32,
     ) -> impl Iterator<Item = GridIdx> + use<'_> {
-        (x1..=x2).flat_map(move |x| (y1..=y2).map(move |y| self.from_xy(x as u32, y as u32)))
+        (x1..=x2).flat_map(move |x| (y1..=y2).map(move |y| self.xy2grid(x as u32, y as u32)))
     }
 
     fn contains_exhibit(&self, x1: i32, y1: i32, x2: i32, y2: i32) -> bool {
@@ -210,7 +210,7 @@ impl FloorPlan {
         let mut all_non_boundary_cells = Vec::new();
         for x in 1..width - 1 {
             for y in 1..height - 1 {
-                all_non_boundary_cells.push(f.from_xy(x, y));
+                all_non_boundary_cells.push(f.xy2grid(x, y));
             }
         }
 
@@ -280,7 +280,7 @@ impl FloorPlan {
                 if f.contains_exhibit(x, y, x + size_x, y + size_y) {
                     continue;
                 }
-                let exhibit_location = f.from_xy((x + size_x / 2) as u32, (y + size_y / 2) as u32);
+                let exhibit_location = f.xy2grid((x + size_x / 2) as u32, (y + size_y / 2) as u32);
                 f.stamp_room(x, y, x + size_x, y + size_y);
                 room_count += 1;
                 f.set(exhibit_location, GridElem::Exhibit);
@@ -379,14 +379,14 @@ impl FloorPlan {
     pub fn print(&self) {
         for y in 0..self.height {
             for x in 0..self.width {
-                let c = match self.at(self.from_xy(x, y)) {
+                let c = match self.at(self.xy2grid(x, y)) {
                     GridElem::Wall => "w",
                     GridElem::Empty => ".",
                     GridElem::Exhibit => "x",
                 };
                 print!("{}", c);
             }
-            print!("\n");
+            println!();
         }
     }
 
