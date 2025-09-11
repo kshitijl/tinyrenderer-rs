@@ -42,3 +42,58 @@ Here is the journey of this renderer so far:
 ![](./renders/22-head-lit.webp)
 ![](./renders/23-diablo-lit.webp)
 
+![](./renders/24-debug-bounding-boxes.webp)
+
+### You can do shader effects
+![](./renders/25-spooky.png)
+![](./renders/26-ellipses.png)
+![](./renders/27-truss.png)
+
+### Depth
+![](./renders/28-sort-by-z.webp)
+![](./renders/29-depth-tested-diablo.png)
+![](./renders/30-depth-buffer-diablo.png)
+![](./renders/31-depth-tested-head.png)
+![](./renders/32-depth-buffer-head.png)
+![](./renders/33-head-lit.webp)
+
+### Perspective
+![](./renders/34-megahead.png)
+![](./renders/35-optical-illusion-bad-perspective.webp)
+![](./renders/36-perspective-diablo-fixed.webp)
+![](./renders/37-perspective-head-fixed.webp)
+![](./renders/38-persective-float-depth-buffer-head.webp)
+![](./renders/39-perspective-correct-z-interpolation.webp)
+
+### Normals for lighting
+![](./renders/40-normal-mapped-head.png)
+![](./renders/41-phong-shading-with-quantization.png)
+![](./renders/42-transform-normals-correctly.webp)
+![](./renders/43-buggy-normal-transform.webp)
+
+### Mouselook
+![](./renders/44-mouselook.webp)
+
+### Visualizing the depth buffer for shadow mapping
+![](./renders/45-depth-buffer-side-by-side.png)
+![](./renders/46-moving-light.webp)
+![](./renders/47-lights-pov.png)
+![](./renders/48-shadows.webp)
+![](./renders/49-shadows.png)
+
+
+### More bugs
+![](./renders/50-clearing-bug.png)
+![](./renders/50-wireframe-debug.png)
+![](./renders/51-lots-of-objects.png)
+
+### Trying to get a nice looking flashlight
+![](./renders/52-harsh-flashlight.png)
+![](./renders/53-soft-flashlight.png)
+![](./renders/54-chromatic-aberration.png)
+
+### What's the point of a renderer, show me a game already
+![](./renders/55-topdown-view.png)
+![](./renders/56-debug-grid.png)
+![](./renders/57-pixelation-effect.png)
+![](./renders/58-pixelation-effect-topdown.png)
