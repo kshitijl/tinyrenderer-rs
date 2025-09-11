@@ -24,6 +24,8 @@ Here's a teaser of the end state:
 
 ![](./renders/59-gameplay.webp)
 
+Video [here](https://www.youtube.com/shorts/1EzR_NA4Gn4).
+
 Here is the journey of this renderer so far:
 
 ### Test checkerboard patterns to see that TGA output works
