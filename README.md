@@ -2,7 +2,27 @@
 
 Pure CPU software renderer written in Rust, following [Dmitry V. Sokolov's tinyrenderer course](https://github.com/ssloy/tinyrenderer/wiki).
 
+## can I run it?
+
+Yes! I mean probably. It works on my 2021 M1 MacBook Pro. I might have hardcoded things that won't work on other systems.
+
+You'll need the [rust toolchain](https://rustup.rs/) and [just](https://github.com/casey/just) installed. Then:
+
+```
+git clone https://github.com/kshitijl/tinyrenderer-rs.git
+cd tinyrenderer-rs
+just launch
+```
+
+### How do I install just?
+
+After installing rust, do `cargo install just`.
+
 ## show me the good stuff! SHOW ME the GOOOOOD stuff it makes
+
+Here's a teaser of the end state:
+
+![](./renders/59-gameplay.webp)
 
 Here is the journey of this renderer so far:
 
