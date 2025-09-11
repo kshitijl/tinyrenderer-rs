@@ -31,6 +31,8 @@ Here is the journey of this renderer so far:
 ![](./renders/02.png)
 
 ### Drawing points and lines, working up to Bresenham's all-integer line-drawing algorithm
+
+<img src="./renders/03.png" width=200>
 ![](./renders/03.png)
 ![](./renders/04.png)
 ![](./renders/05.png)
