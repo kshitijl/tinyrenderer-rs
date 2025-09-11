@@ -58,9 +58,12 @@ Here is the journey of this renderer so far:
 ![](./renders/12-diablo-rotating.webp)
 
 ### Filling in triangles
-![](./renders/14.png)
-![](./renders/15.png)
-![](./renders/17-fill-triangles-one-loop.png)
+<img src="./renders/14.png" width=500></img>
+
+<img src="./renders/15.png" width=500></img>
+
+<img src="./renders/17-fill-triangles-one-loop.png" width=500></img>
+
 ![](./renders/18-diablo-with-triangles.png)
 
 ### Lighting
