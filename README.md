@@ -24,7 +24,7 @@ Here's a teaser of the end state:
 
 ![](./renders/59-gameplay.webp)
 
-Video [here](https://www.youtube.com/shorts/1EzR_NA4Gn4).
+Video [here](https://www.youtube.com/shorts/1EzR_NA4Gn4). Sorry it's a Youtube short! I guess they automatically do that if your video meets certain criteria. Sad.
 
 Here is the journey of this renderer so far:
 
@@ -123,6 +123,9 @@ Here is the journey of this renderer so far:
 ![](./renders/54-chromatic-aberration.png)
 
 ### What's the point of a renderer, show me a game already
+
+Once I had a renderer I figured I might as well make a game with it.
+
 ![](./renders/55-topdown-view.png)
 ![](./renders/56-debug-grid.png)
 ![](./renders/57-pixelation-effect.png)
