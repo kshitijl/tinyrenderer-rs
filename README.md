@@ -32,12 +32,15 @@ Here is the journey of this renderer so far:
 
 ### Drawing points and lines, working up to Bresenham's all-integer line-drawing algorithm
 
-<img src="./renders/03.png" width=200>
-![](./renders/03.png)
-![](./renders/04.png)
-![](./renders/05.png)
-![](./renders/06.png)
-![](./renders/07-bresenham.png)
+<img src="./renders/03.png" width=500></img>
+
+<img src="./renders/04.png" width=500></img>
+
+<img src="./renders/05.png" width=500></img>
+
+<img src="./renders/06.png" width=500></img>
+
+<img src="./renders/07-bresenham.png" width=500></img>
 
 ### Loading and drawing a model by simply dropping the Z coordinates and drawing triangles
 
