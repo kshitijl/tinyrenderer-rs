@@ -18,6 +18,22 @@ just launch
 
 After installing rust, do `cargo install just`.
 
+## Things I could implement but didn't
+
+1. Parallelize using `rayon` or maybe `crossbeam`. Figure out how to avoid a lot of contention writing to the depth buffer (and, by extension, at that location in the color buffer). Or maybe just parallelize over all the pixels within one triangle -- those will never contend for the color nor depth buffer because they're different pixels (thanks to Joe Ardent for this insight!).
+2. Rewrite the game logic using `hecs`. Or roll my own mini ECS.
+3. Keep score and health, then draw them to screen by implementing some kind of font rendering. Maybe Hershey fonts (thanks Dave Long for that reference!).
+4. When the player dies, show a "YOU DIED" message and restart with a new randomly generated world.
+5. When the player wins by uncovering all exhibits, show a short victory sequence.
+6. Guards should not pass through walls. They should pathfind instead.
+7. Play sound effects when: guards enter Alarmed mode, an exhibit is uncovered, damage is taken, we enter FPS mode.
+8. Menu for selecting difficulty level.
+9. Fix the AWFUL clipping in FPS mode when we get too close to walls. This probably involves clipping triangles properly against the view frustum to generate new vertices.
+10. Draw a real player character instead of just a white bouncing model.
+11. Keep the camera behind the player in topdown mode so we can always see them.
+12. Keep the player model from clipping into walls.
+13. Fix the object frustum culling: right now, an object is culled if all of its AABB corners fall outside the frustum. But this incorrectly culls objects that have portions visible inside the frustum, like large walls. Instead, we must check for view frustum instersection.
+
 ## show me the good stuff! SHOW ME the GOOOOOD stuff it makes
 
 Here's a teaser of the end state:
