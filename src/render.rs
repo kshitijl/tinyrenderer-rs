@@ -2,7 +2,6 @@ use crate::game::{Camera, Flashlight, Object, ObjectKind, Spotlight};
 use crate::image::*;
 
 use glam::{Mat4, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles, vec3, vec4};
-use std::f32;
 use std::ops::Add;
 
 mod line;

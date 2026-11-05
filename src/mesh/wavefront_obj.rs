@@ -10,8 +10,7 @@ use nom::{
     number::complete::float,
     sequence::{preceded, terminated},
 };
-use std::fs::File;
-use std::io::{self, BufRead, BufReader};
+use std::io::{self, BufRead};
 
 pub struct Mesh {
     pub vertices: Vec<Vec3>,
@@ -27,8 +26,14 @@ enum ParsedLine {
 }
 impl Mesh {
     pub fn from_file(filename: &str) -> io::Result<Mesh> {
-        let file = File::open(filename)?;
-        let reader = BufReader::new(file);
+        #[cfg(not(target_arch = "wasm32"))]
+        let reader = std::io::BufReader::new(std::fs::File::open(filename)?);
+
+        // Since there's no filesystem in the browser, we'll just have the
+        // wasm wrapper crate embed the assets and pass in the contents as
+        // the filename arg. Hacky, but it works.
+        #[cfg(target_arch = "wasm32")]
+        let reader = crate::read_asset(filename)?;
 
         let mut vertices = Vec::new();
         let mut faces = Vec::new();
