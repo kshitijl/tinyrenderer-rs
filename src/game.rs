@@ -892,7 +892,10 @@ impl World {
                 }
 
                 GuardState::Alarmed { starting_at } => {
-                    let motion_dir = (self.player.pos - guard_obj.pos).with_y(0.0).normalize();
+                    // The normalize_or_zero is to avoid NaN if player.pos = guard_obj.pos.
+                    let motion_dir = (self.player.pos - guard_obj.pos)
+                        .with_y(0.0)
+                        .normalize_or_zero();
 
                     let desired_pos =
                         guard_obj.pos + motion_dir * guard_speed * since_last_frame.as_secs_f32();
