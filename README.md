@@ -4,6 +4,10 @@ Pure CPU software renderer written in Rust, following [Dmitry V. Sokolov's tinyr
 
 ## can I run it?
 
+See [my website](https://klauria.tech/tinyrenderer-rs/) for an in-browser wasm build, running in your browser.
+
+## can I run it natively?
+
 Yes! I mean probably. It works on my 2021 M1 MacBook Pro. I might have hardcoded things that won't work on other systems.
 
 You'll need the [rust toolchain](https://rustup.rs/) and [just](https://github.com/casey/just) installed. Then:
